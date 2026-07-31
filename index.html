@@ -106,9 +106,11 @@
   .panel .en{font-size:10.5px;letter-spacing:.5em;color:var(--gold);margin-bottom:26px}
   .panel p{font-size:12.5px;line-height:2.1;color:var(--dim);margin:0 0 34px}
   .drop{
+    display:block;cursor:pointer;
     border:1px dashed rgba(255,255,255,.22);border-radius:16px;padding:34px 24px;margin-bottom:22px;
     transition:.3s;background:rgba(255,255,255,.02)
   }
+  .drop:hover{border-color:rgba(255,207,138,.5);background:rgba(255,207,138,.04)}
   body.dragging .drop{border-color:var(--gold);background:rgba(255,207,138,.07)}
   .drop .big{font-size:13px;letter-spacing:.16em;margin-bottom:8px}
   .drop .small{font-size:10.5px;color:var(--dimmer);letter-spacing:.1em}
@@ -191,10 +193,10 @@
     <div class="en">Sound &times; Nature</div>
     <p>音源をアップロードすると、光・水・オーロラ・樹・星屑・花が音に呼応して姿を変えます。<br>
        低音は波紋と鼓動に、中音域は流れと風に、高音は粒子ときらめきに。</p>
-    <div class="drop" id="drop">
-      <div class="big">ここに音源ファイルをドロップ</div>
-      <div class="small">MP3 / WAV / M4A / OGG / FLAC &nbsp;—&nbsp; ファイルは端末内で処理され、どこにも送信されません</div>
-    </div>
+    <label class="drop" id="drop" for="file">
+      <div class="big">クリックして音源を選ぶ／ここにドロップ</div>
+      <div class="small">MP3 / WAV / M4A / AAC / OGG / FLAC &nbsp;—&nbsp; ファイルは端末内で処理され、どこにも送信されません</div>
+    </label>
     <div class="actions">
       <button class="btn primary" id="pick">音源を選ぶ</button>
       <button class="btn" id="demo">デモ音源で見る</button>
@@ -205,7 +207,10 @@
 </div>
 
 <div id="toast"></div>
-<input type="file" id="file" accept="audio/*" hidden>
+<!-- accept を audio/* だけにすると、環境によって .mp3 が音声と判定されず
+     ファイル選択画面で選べなくなる。拡張子と MIME を明示して取りこぼしを防ぐ。 -->
+<input type="file" id="file" hidden
+  accept="audio/*,audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/flac,audio/x-flac,.mp3,.wav,.m4a,.aac,.ogg,.oga,.opus,.flac,.aif,.aiff,.wma,.mp4,.webm">
 
 <script>
 /* =========================================================================
@@ -304,6 +309,16 @@ function blob(ctx, sprite, x, y, radius, alpha) {
 /* HSL → CSS 文字列（色計算を素直に書くため） */
 const hsl = (h, s, l, a = 1) => `hsla(${h},${s}%,${l}%,${a})`;
 
+/** 音声要素のエラーを、原因の分かる日本語にする */
+function mediaErrorText(err) {
+  const code = err && err.code;
+  if (code === 1) return '読み込みが中断されました';
+  if (code === 2) return 'ファイルの読み込みに失敗しました';
+  if (code === 3) return 'デコードできませんでした（ファイルが壊れている可能性があります）';
+  if (code === 4) return 'この形式はお使いのブラウザが再生に対応していません';
+  return (err && err.message) || '読み込めませんでした';
+}
+
 const fmtTime = s => {
   if (!isFinite(s) || s < 0) s = 0;
   const m = Math.floor(s / 60), ss = Math.floor(s % 60);
@@ -331,7 +346,7 @@ class AudioEngine {
     this.ctx = null;
     this.analyser = null;
     this.el = new Audio();
-    this.el.crossOrigin = 'anonymous';
+    this.el.preload = 'auto';
     this.elSource = null;
     this.micStream = null;
     this.demo = null;
@@ -383,7 +398,9 @@ class AudioEngine {
   resume() { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); }
 
   /* ---- 入力ソース切り替え ---- */
-  async useFile(file) {
+  /** 音源を読み込む。読み込みと再生を分けているので、
+   *  自動再生がブロックされてもファイル自体は読み込み済みのまま残る。 */
+  async loadFile(file) {
     this._ensureCtx();
     this._stopMic(); this._stopDemo();
     if (!this.elSource) {
@@ -396,7 +413,25 @@ class AudioEngine {
     this.el.src = this._url;
     this.el.loop = true;
     this.mode = 'file';
-    await this.resume();
+    await new Promise((resolve, reject) => {
+      const done = () => { off(); resolve(); };
+      const fail = () => { off(); reject(new Error(mediaErrorText(this.el.error))); };
+      const off = () => {
+        this.el.removeEventListener('loadedmetadata', done);
+        this.el.removeEventListener('error', fail);
+        clearTimeout(timer);
+      };
+      const timer = setTimeout(() => {
+        off();
+        reject(new Error('読み込みに時間がかかりすぎました。ファイルサイズをご確認ください'));
+      }, 30000);
+      this.el.addEventListener('loadedmetadata', done);
+      this.el.addEventListener('error', fail);
+    });
+  }
+  /** 読み込み済みの音源を再生する（ユーザー操作の直後に呼ぶ必要がある） */
+  play() {
+    this.resume();
     return this.el.play();
   }
 
@@ -441,9 +476,14 @@ class AudioEngine {
   }
 
   toggle() {
-    if (this.mode === 'file') { this.el.paused ? this.el.play() : this.el.pause(); }
-    else if (this.mode === 'demo') { this.demo.running ? this.demo.stop() : this.demo.start(); }
+    if (this.mode === 'file') {
+      if (this.el.paused) return this.play();
+      this.el.pause();
+      return Promise.resolve();
+    }
+    if (this.mode === 'demo') { this.demo.running ? this.demo.stop() : this.demo.start(); }
     this.resume();
+    return Promise.resolve();
   }
 
   setVolume(v) {
@@ -1964,19 +2004,32 @@ function toast(msg, ms = 2600) {
 
 async function loadFile(file) {
   if (!file) return;
-  if (!/^audio\//.test(file.type) && !/\.(mp3|wav|m4a|aac|ogg|oga|flac|opus|webm)$/i.test(file.name)) {
-    toast('音声ファイルを選んでください'); return;
+  const looksAudio = /^audio\//.test(file.type) ||
+    /\.(mp3|wav|m4a|aac|ogg|oga|flac|opus|webm|mp4|aif|aiff)$/i.test(file.name);
+  if (!looksAudio) {
+    toast(`「${file.name}」は音声ファイルではないようです`, 4000);
+    return;
   }
+  toast(`読み込み中… ${file.name}`, 30000);
   try {
-    await audio.useFile(file);
-    $('trackname').textContent = file.name;
-    document.title = `${file.name} — Sound × Nature`;
-    begin();
-    toast('再生中：' + file.name);
+    await audio.loadFile(file);
   } catch (e) {
     console.error(e);
-    toast('この音源は再生できませんでした');
+    toast(`${file.name} を読み込めませんでした — ${e.message}`, 7000);
+    return;
   }
+  $('trackname').textContent = file.name;
+  document.title = `${file.name} — Sound × Nature`;
+  begin();
+  try {
+    await audio.play();
+    toast('再生中：' + file.name);
+  } catch (e) {
+    /* 読み込みは成功しているので、再生ボタンを押せば始まる */
+    console.warn(e);
+    toast('読み込みました。▶ を押すと再生します', 6000);
+  }
+  refreshPlayIcon();
 }
 
 $('file').addEventListener('change', e => loadFile(e.target.files[0]));
@@ -2020,7 +2073,7 @@ function refreshPlayIcon() {
 }
 $('play').addEventListener('click', () => {
   if (audio.mode === 'none') { audio.useDemo(); $('trackname').textContent = 'デモ音源（その場で生成）'; begin(); }
-  else audio.toggle();
+  else Promise.resolve(audio.toggle()).catch(e => toast('再生できませんでした — ' + e.message, 5000));
   setTimeout(refreshPlayIcon, 30);
 });
 audio.el.addEventListener('play', refreshPlayIcon);
@@ -2090,6 +2143,10 @@ window.addEventListener('resize', () => {
 });
 
 /* --- メインループ --- */
+const bar = (id, v) => {
+  const el = $(id);
+  if (el) el.style.width = (clamp(v, 0, 1) * 100).toFixed(1) + '%';
+};
 let uiAcc = 0;
 function loop() {
   requestAnimationFrame(loop);
@@ -2108,10 +2165,10 @@ function loop() {
   uiAcc += a.dt;
   if (uiAcc > 0.05) {
     uiAcc = 0;
-    $('m-bass').style.width = (clamp(a.bass, 0, 1) * 100).toFixed(1) + '%';
-    $('m-mid').style.width = (clamp(a.mid, 0, 1) * 100).toFixed(1) + '%';
-    $('m-high').style.width = (clamp((a.high + a.air) * 0.6, 0, 1) * 100).toFixed(1) + '%';
-    $('m-energy').style.width = (clamp(a.intensity, 0, 1) * 100).toFixed(1) + '%';
+    bar('m-bass', a.bass);
+    bar('m-mid', a.mid);
+    bar('m-high', (a.high + a.air) * 0.6);
+    bar('m-energy', a.intensity);
     const ph = $('phase');
     if (ph.textContent !== a.phaseName) ph.textContent = a.phaseName;
     ph.style.opacity = (0.45 + a.intensity * 0.55).toFixed(2);
