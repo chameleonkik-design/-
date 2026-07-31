@@ -2375,16 +2375,1455 @@ class FlowerScene extends Scene {
   }
 }
 
+/* ======================================================================
+   WebGL2 描画エンジン
+   HDR で描いて ACES でトーンマップし、ブルーム・被写界深度・色収差・
+   グレイン・周辺減光を通す。シーンは「レイマーチ」「粒子」「板」の
+   いずれかとして実装され、すべて同じ後処理を共有する。
+   ====================================================================== */
+class GLEngine {
+  constructor(canvas) {
+    this.canvas = canvas;
+    const opt = { alpha: false, antialias: false, depth: true, powerPreference: 'high-performance' };
+    const gl = canvas.getContext('webgl2', opt);
+    if (!gl) throw new Error('WebGL2 に対応していません');
+    this.gl = gl;
+    this.hdr = !!gl.getExtension('EXT_color_buffer_float');
+    gl.getExtension('OES_texture_float_linear');
+    this.progs = new Map();
+    this._quad();
+    this.W = this.H = 2;
+  }
+
+  _quad() {
+    const gl = this.gl;
+    this.vao = gl.createVertexArray();
+    gl.bindVertexArray(this.vao);
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    // 画面を覆う大きな三角形 1 枚
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+    this.emptyVao = gl.createVertexArray();
+  }
+
+  compile(type, src, name) {
+    const gl = this.gl;
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+      const log = gl.getShaderInfoLog(sh);
+      const line = (log.match(/(\d+):(\d+)/) || [])[2];
+      const ctx = src.split('\n').slice(Math.max(0, line - 4), +line + 2)
+        .map((l, i) => `${Math.max(1, line - 3) + i}| ${l}`).join('\n');
+      throw new Error(`${name} のコンパイルに失敗\n${log}\n${ctx}`);
+    }
+    return sh;
+  }
+
+  program(name, vsSrc, fsSrc) {
+    if (this.progs.has(name)) return this.progs.get(name);
+    const gl = this.gl;
+    const p = gl.createProgram();
+    gl.attachShader(p, this.compile(gl.VERTEX_SHADER, vsSrc, name + ':vs'));
+    gl.attachShader(p, this.compile(gl.FRAGMENT_SHADER, fsSrc, name + ':fs'));
+    gl.bindAttribLocation(p, 0, 'aPos');
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      throw new Error(`${name} のリンクに失敗\n${gl.getProgramInfoLog(p)}`);
+    }
+    const rec = { p, loc: new Map() };
+    this.progs.set(name, rec);
+    return rec;
+  }
+
+  _loc(rec, name) {
+    if (!rec.loc.has(name)) rec.loc.set(name, this.gl.getUniformLocation(rec.p, name));
+    return rec.loc.get(name);
+  }
+
+  /** uniform をまとめて設定する。値の形から型を判断する */
+  setUniforms(rec, u) {
+    const gl = this.gl;
+    let unit = 0;
+    for (const k in u) {
+      const loc = this._loc(rec, k);
+      if (loc === null) continue;
+      const v = u[k];
+      if (v && v.__tex) {
+        gl.activeTexture(gl.TEXTURE0 + unit);
+        gl.bindTexture(gl.TEXTURE_2D, v.tex);
+        gl.uniform1i(loc, unit);
+        unit++;
+      } else if (typeof v === 'number') gl.uniform1f(loc, v);
+      else if (typeof v === 'boolean') gl.uniform1i(loc, v ? 1 : 0);
+      else if (v.length === 2) gl.uniform2fv(loc, v);
+      else if (v.length === 3) gl.uniform3fv(loc, v);
+      else if (v.length === 4) gl.uniform4fv(loc, v);
+      else if (v.length === 9) gl.uniformMatrix3fv(loc, false, v);
+      else if (v.length === 16) gl.uniformMatrix4fv(loc, false, v);
+    }
+  }
+
+  /** レンダーターゲットを作る */
+  makeFBO(w, h, opts = {}) {
+    const gl = this.gl;
+    const float = opts.float !== false && this.hdr;
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0,
+      float ? (opts.precise ? gl.RGBA32F : gl.RGBA16F) : gl.RGBA8,
+      w, h, 0, gl.RGBA, float ? gl.FLOAT : gl.UNSIGNED_BYTE, null);
+    const filter = opts.nearest ? gl.NEAREST : gl.LINEAR;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const fb = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    let depth = null;
+    if (opts.depth) {
+      depth = gl.createRenderbuffer();
+      gl.bindRenderbuffer(gl.RENDERBUFFER, depth);
+      gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, w, h);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depth);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return { __tex: true, fb, tex, depth, w, h };
+  }
+
+  bind(target) {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target ? target.fb : null);
+    gl.viewport(0, 0, target ? target.w : this.W, target ? target.h : this.H);
+  }
+
+  /** 画面を覆う三角形にシェーダをかける */
+  blit(rec, uniforms, target) {
+    const gl = this.gl;
+    this.bind(target);
+    gl.useProgram(rec.p);
+    this.setUniforms(rec, uniforms);
+    gl.bindVertexArray(this.vao);
+    gl.disable(gl.DEPTH_TEST);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  clear(target, r = 0, g = 0, b = 0, a = 0) {
+    const gl = this.gl;
+    this.bind(target);
+    gl.clearColor(r, g, b, a);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  }
+}
+
+/* ----------------------------------------------------------------------
+   ベクトルと行列（カメラ用の最小限）
+   ---------------------------------------------------------------------- */
+const V3 = {
+  add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
+  sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
+  mul: (a, s) => [a[0] * s, a[1] * s, a[2] * s],
+  dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2],
+  cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
+  len: a => Math.hypot(a[0], a[1], a[2]),
+  norm: a => { const l = V3.len(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; },
+  lerp: (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)]
+};
+
+/** 注視点を向くカメラ基底（右, 上, 前）を 3x3 行列で返す */
+function lookMatrix(pos, target, roll) {
+  const fwd = V3.norm(V3.sub(target, pos));
+  let up = [Math.sin(roll), Math.cos(roll), 0];
+  if (Math.abs(V3.dot(fwd, [0, 1, 0])) > 0.999) up = [Math.sin(roll), 0, Math.cos(roll)];
+  const right = V3.norm(V3.cross(fwd, up));
+  const trueUp = V3.cross(right, fwd);
+  return [right[0], right[1], right[2], trueUp[0], trueUp[1], trueUp[2], fwd[0], fwd[1], fwd[2]];
+}
+
+/* ======================================================================
+   シェーダ
+   ====================================================================== */
+const VS_QUAD = `#version 300 es
+in vec2 aPos;
+out vec2 vUv;
+void main(){ vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
+
+/* シーン用の共通部。ノイズ・カメラ・音の uniform をまとめる */
+const GLSL_COMMON = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+
+uniform vec2  uRes;
+uniform float uTime;
+uniform vec3  uCamPos;
+uniform mat3  uCamMat;
+uniform float uFov;
+uniform float uFocus, uAperture;
+uniform float uBass, uSub, uLowMid, uMid, uHighMid, uHigh, uAir;
+uniform float uLevel, uIntensity, uBeat;
+uniform vec3  uHue;          // シーンごとの色調
+uniform vec4  uRipple[8];    // x, z, 経過秒, 強さ
+
+#define PI 3.14159265359
+
+float hash11(float p){ p = fract(p*0.1031); p *= p+33.33; p *= p+p; return fract(p); }
+float hash12(vec2 p){ vec3 p3 = fract(vec3(p.xyx)*0.1031); p3 += dot(p3, p3.yzx+33.33); return fract((p3.x+p3.y)*p3.z); }
+vec3  hash33(vec3 p){
+  p = fract(p*vec3(0.1031,0.1030,0.0973));
+  p += dot(p, p.yxz+33.33);
+  return fract((p.xxy+p.yxx)*p.zyx);
+}
+float hash13(vec3 p3){ p3 = fract(p3*0.1031); p3 += dot(p3, p3.zyx+31.32); return fract((p3.x+p3.y)*p3.z); }
+
+float noise3(vec3 x){
+  vec3 i = floor(x), f = fract(x);
+  f = f*f*(3.0-2.0*f);
+  float n = i.x + i.y*157.0 + 113.0*i.z;
+  return mix(mix(mix(hash11(n+0.0),   hash11(n+1.0),   f.x),
+                 mix(hash11(n+157.0), hash11(n+158.0), f.x), f.y),
+             mix(mix(hash11(n+113.0), hash11(n+114.0), f.x),
+                 mix(hash11(n+270.0), hash11(n+271.0), f.x), f.y), f.z) * 2.0 - 1.0;
+}
+float fbm3(vec3 p, int oct){
+  float a = 0.5, s = 0.0;
+  mat3 m = mat3(0.00, 0.80, 0.60, -0.80, 0.36, -0.48, -0.60, -0.48, 0.64);
+  for(int i=0;i<8;i++){
+    if(i>=oct) break;
+    s += a*noise3(p);
+    p = m*p*2.02;
+    a *= 0.5;
+  }
+  return s;
+}
+
+/* 画素ごとの視線 */
+vec3 rayDir(vec2 uv){
+  vec2 p = (uv*2.0-1.0);
+  p.x *= uRes.x/uRes.y;
+  return normalize(uCamMat * vec3(p*tan(uFov*0.5), 1.0));
+}
+/* 距離を錯乱円（ボケの大きさ）に変換して alpha に載せる */
+float cocOf(float dist){
+  /* 薄レンズに近い形。距離の逆数で測ると、遠景は合焦したまま手前だけがボケる */
+  float c = abs(1.0/max(dist,0.05) - 1.0/max(uFocus,0.05)) * uFocus;
+  return clamp(c*uAperture, 0.0, 1.0);
+}
+`;
+
+/* ---------------------------------------------------------------- 後処理 */
+const FS_DOWN = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 fragColor;
+uniform sampler2D uTex; uniform vec2 uTexel; uniform float uThreshold;
+void main(){
+  vec3 c = texture(uTex, vUv + uTexel*vec2(-1,-1)).rgb
+         + texture(uTex, vUv + uTexel*vec2( 1,-1)).rgb
+         + texture(uTex, vUv + uTexel*vec2(-1, 1)).rgb
+         + texture(uTex, vUv + uTexel*vec2( 1, 1)).rgb;
+  c *= 0.25;
+  if(uThreshold > 0.0){
+    float l = dot(c, vec3(0.2126,0.7152,0.0722));
+    c *= max(0.0, l-uThreshold)/max(l, 0.0001);
+  }
+  fragColor = vec4(c, 1.0);
+}`;
+
+const FS_UP = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 fragColor;
+uniform sampler2D uTex; uniform vec2 uTexel;
+void main(){
+  // テントフィルタで滑らかに拡大する
+  vec3 c = texture(uTex, vUv + uTexel*vec2(-1, 0)).rgb*2.0
+         + texture(uTex, vUv + uTexel*vec2( 1, 0)).rgb*2.0
+         + texture(uTex, vUv + uTexel*vec2( 0,-1)).rgb*2.0
+         + texture(uTex, vUv + uTexel*vec2( 0, 1)).rgb*2.0
+         + texture(uTex, vUv + uTexel*vec2(-1,-1)).rgb
+         + texture(uTex, vUv + uTexel*vec2( 1,-1)).rgb
+         + texture(uTex, vUv + uTexel*vec2(-1, 1)).rgb
+         + texture(uTex, vUv + uTexel*vec2( 1, 1)).rgb
+         + texture(uTex, vUv).rgb*4.0;
+  fragColor = vec4(c/16.0, 1.0);
+}`;
+
+/* 被写界深度：alpha に入れた錯乱円の大きさで放射状にぼかす */
+const FS_DOF = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 fragColor;
+uniform sampler2D uTex; uniform vec2 uTexel; uniform float uStrength;
+void main(){
+  vec4 c0 = texture(uTex, vUv);
+  float coc = c0.a * uStrength;
+  if(coc < 0.004){ fragColor = c0; return; }
+  vec3 sum = c0.rgb; float wsum = 1.0;
+  float ang = 2.39996323;   // 黄金角で放射状に散らす
+  for(int i=1;i<=18;i++){
+    float f = float(i)/18.0;
+    float r = sqrt(f)*coc;
+    float a = float(i)*ang;
+    vec2 off = vec2(cos(a), sin(a))*r*vec2(1.0, uTexel.y/uTexel.x);
+    vec4 s = texture(uTex, vUv + off*0.5);
+    // 手前のボケが背景を侵食しないよう、錯乱円が近い画素を優先する
+    float w = smoothstep(0.0, 1.0, s.a/max(c0.a,0.02));
+    sum += s.rgb*w; wsum += w;
+  }
+  fragColor = vec4(sum/wsum, c0.a);
+}`;
+
+const FS_COMPOSITE = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 fragColor;
+uniform sampler2D uScene, uBloom;
+uniform vec2  uRes;
+uniform float uTime, uBloomAmt, uCA, uVignette, uGrain, uStreak, uExposure, uLift;
+
+vec3 aces(vec3 x){
+  const float a=2.51, b=0.03, c=2.43, d=0.59, e=0.14;
+  return clamp((x*(a*x+b))/(x*(c*x+d)+e), 0.0, 1.0);
+}
+float hash12(vec2 p){ vec3 p3 = fract(vec3(p.xyx)*0.1031); p3 += dot(p3,p3.yzx+33.33); return fract((p3.x+p3.y)*p3.z); }
+
+void main(){
+  vec2 uv = vUv;
+  vec2 d = uv - 0.5;
+  float r2 = dot(d,d);
+
+  /* 色収差：周辺ほど大きくずらす */
+  float ca = uCA * (0.002 + r2*0.010);
+  vec3 col;
+  col.r = texture(uScene, uv + d*ca).r;
+  col.g = texture(uScene, uv).g;
+  col.b = texture(uScene, uv - d*ca).b;
+
+  vec3 bl;
+  bl.r = texture(uBloom, uv + d*ca*1.6).r;
+  bl.g = texture(uBloom, uv).g;
+  bl.b = texture(uBloom, uv - d*ca*1.6).b;
+  col += bl * uBloomAmt;
+
+  /* アナモルフィックな横方向の光条 */
+  if(uStreak > 0.001){
+    vec3 s = vec3(0.0);
+    for(int i=1;i<=8;i++){
+      float o = float(i)*0.011;
+      s += texture(uBloom, uv+vec2(o,0.0)).rgb;
+      s += texture(uBloom, uv-vec2(o,0.0)).rgb;
+    }
+    col += s*(1.0/16.0)*uStreak*vec3(0.45,0.65,1.0);
+  }
+
+  col *= uExposure;
+  col += uLift*vec3(0.009,0.012,0.022);      // 黒を少し浮かせてフィルムらしく
+  col = aces(col);
+  col = pow(col, vec3(0.4545));               // sRGB へ
+
+  /* 周辺減光 */
+  col *= mix(1.0, smoothstep(0.85, 0.12, r2), uVignette);
+
+  /* 粒状感 */
+  float g = hash12(gl_FragCoord.xy + fract(uTime)*vec2(137.0, 311.0)) - 0.5;
+  col += g * uGrain * (0.16 - 0.10*dot(col, vec3(0.333)));
+
+  fragColor = vec4(col, 1.0);
+}`;
+
+/* ================================================================
+   シーン A ── 光の波紋 / 夕暮れの海
+   高さ場としての海面をレイマーチし、空の反射と太陽の鏡面反射で描く。
+   ビートごとに同心円の波紋が水面を走る。
+   ================================================================ */
+const FS_OCEAN = GLSL_COMMON + `
+float waveHeight(vec2 p, float detail){
+  float h = 0.0, amp = 0.30, freq = 0.36;
+  vec2 dir = vec2(0.86, 0.51);
+  for(int i=0;i<6;i++){
+    if(float(i) > detail) break;
+    /* うねりを進行方向へ流す。sin を尖らせて波頭を作る */
+    float d = dot(p, dir) * freq + uTime * (0.55 + float(i)*0.22);
+    h += amp * (sin(d) * 0.5 + 0.5 - 0.5) * 1.0;
+    h += amp * 0.55 * noise3(vec3(p*freq*1.7, uTime*0.20));
+    dir = mat2(0.80, -0.60, 0.60, 0.80) * dir;
+    freq *= 1.85; amp *= 0.52;
+  }
+  /* ビートで生まれる同心円の波紋 */
+  for(int i=0;i<8;i++){
+    vec4 R = uRipple[i];
+    if(R.w <= 0.0) continue;
+    float dist = length(p - R.xy);
+    float front = R.z * 9.0;
+    float band = dist - front;
+    float env = exp(-abs(band)*0.55) * exp(-R.z*0.55) * R.w;
+    h += sin(band*2.2) * env * 0.34;
+  }
+  return h;
+}
+vec3 waveNormal(vec2 p, float e, float detail){
+  float h  = waveHeight(p, detail);
+  float hx = waveHeight(p+vec2(e,0.0), detail);
+  float hz = waveHeight(p+vec2(0.0,e), detail);
+  return normalize(vec3(h-hx, e, h-hz));
+}
+
+vec3 sunDir(){ return normalize(vec3(0.0, 0.052 + uIntensity*0.02, 1.0)); }
+
+vec3 sky(vec3 rd){
+  vec3 sd = sunDir();
+  float h = max(rd.y, 0.0);
+  /* 上空の藍から地平の暖色へ */
+  vec3 top = vec3(0.006, 0.011, 0.036) * (0.7 + uIntensity*0.5);
+  vec3 hor = uHue * (0.050 + uLevel*0.075);
+  vec3 col = mix(hor, top, pow(h, 0.42));
+  float sun = max(dot(rd, sd), 0.0);
+  /* 太陽本体と、その周りの散乱。本体だけを大きく振り切らせる */
+  col += uHue * pow(sun, 6000.0) * (260.0 + uBass*420.0);
+  col += uHue * pow(sun, 90.0) * (0.55 + uBass*0.9);
+  col += uHue * pow(sun, 9.0) * 0.10;
+  col += uHue * pow(sun, 2.0) * 0.025;
+  /* 高音で瞬く星 */
+  if(rd.y > 0.02){
+    vec3 sp = rd*46.0;
+    vec3 id = floor(sp);
+    float st = hash13(id);
+    if(st > 0.985){
+      float tw = 0.5+0.5*sin(uTime*(1.5+st*6.0)+st*60.0);
+      float d = length(fract(sp)-0.5);
+      col += vec3(0.75,0.83,1.0)*smoothstep(0.16,0.0,d)*tw*(0.20+uAir*1.2)*smoothstep(0.02,0.35,rd.y);
+    }
+  }
+  return col;
+}
+
+void main(){
+  vec3 ro = uCamPos;
+  vec3 rd = rayDir(vUv);
+  vec3 col;
+  float dist = 900.0;
+
+  if(rd.y < -0.0015){
+    /* 海面（y=0）との交点から、高さ場に沿って詰める */
+    float t = -ro.y/rd.y;
+    if(t < 900.0){
+      float detail = mix(5.0, 1.0, clamp(t/220.0, 0.0, 1.0));   // 遠くは簡略化
+      for(int i=0;i<10;i++){
+        vec3 p = ro + rd*t;
+        float h = waveHeight(p.xz, detail);
+        float diff = p.y - h;
+        if(abs(diff) < 0.006*t) break;
+        t += diff/max(0.0001,-rd.y) * 0.62;
+        if(t > 900.0) break;
+      }
+      dist = t;
+      vec3 p = ro + rd*t;
+      float e = max(0.02, t*0.004);
+      vec3 n = waveNormal(p.xz, e, detail);
+      vec3 sd = sunDir();
+
+      vec3 refl = reflect(rd, n);
+      refl.y = abs(refl.y);
+      float fres = pow(1.0 - max(dot(-rd, n), 0.0), 4.0);
+      fres = mix(0.06, 1.0, fres);
+
+      vec3 deep = vec3(0.0030, 0.0065, 0.0150) * (0.5 + uLevel*0.5);
+      vec3 c = mix(deep, sky(refl), fres);
+
+      /* 太陽の鏡面。指数を大きくして水面のきらめきにする */
+      vec3 hv = normalize(sd - rd);
+      float spec = pow(max(dot(n, hv), 0.0), 900.0);
+      c += uHue * spec * (45.0 + uBass*110.0);
+      float wide = pow(max(dot(n, hv), 0.0), 60.0);
+      c += uHue * wide * (0.45 + uLevel*0.9);
+
+      /* 遠景は大気でかすませる */
+      float fog = 1.0 - exp(-t*0.0020);
+      col = mix(c, sky(vec3(rd.x, 0.006, rd.z)), fog);
+    } else {
+      col = sky(rd);
+    }
+  } else {
+    col = sky(rd);
+    dist = 900.0;
+  }
+  fragColor = vec4(col, cocOf(min(dist, 900.0)));
+}`;
+
+/* ================================================================
+   シーン B ── オーロラ・ドリフト
+   密度場をレイマーチする本物のボリューム。高さで色が変わり、
+   湖面が空を映す。
+   ================================================================ */
+const FS_AURORA = GLSL_COMMON + `
+float curtain(vec3 p){
+  float t = uTime*0.05;
+  /* カーテン 1 枚 1 枚は薄いシート。横方向にうねらせる */
+  float wob = fbm3(vec3(p.x*0.0035, p.z*0.0035, t*2.2), 3);
+  float d = p.z*0.0060 + p.x*0.0016 + wob*1.8;
+  float sheet = exp(-abs(fract(d)-0.5)*7.0);
+  /* 大きなうねりで、カーテンが濃い場所と薄い場所を作る */
+  /* 薄い場所でも完全には消さない。空のどこかには必ず架かっているようにする */
+  float mask = 0.40 + 0.60*smoothstep(-0.05, 0.55, fbm3(vec3(p.x*0.0016, t*0.8, p.z*0.0016), 2)+0.55);
+  float hgt = smoothstep(12.0, 30.0, p.y) * (1.0 - smoothstep(58.0, 112.0, p.y));
+  /* 縦に走る筋 */
+  float ray = 0.35 + 0.65*max(0.0, fbm3(vec3(p.x*0.05, p.y*0.0035, t*5.0), 3)+0.35);
+  return sheet * mask * hgt * ray;
+}
+vec3 auroraColor(float y){
+  float k = clamp((y-16.0)/78.0, 0.0, 1.0);
+  vec3 lo = vec3(0.10, 1.00, 0.52);
+  vec3 mi = vec3(0.28, 0.85, 1.00);
+  vec3 hi = vec3(0.85, 0.34, 1.00);
+  return k < 0.5 ? mix(lo, mi, k*2.0) : mix(mi, hi, (k-0.5)*2.0);
+}
+vec3 stars(vec3 rd){
+  if(rd.y < 0.0) return vec3(0.0);
+  vec3 c = vec3(0.0);
+  vec3 sp = rd*70.0;
+  vec3 id = floor(sp);
+  float st = hash13(id);
+  if(st > 0.977){
+    float tw = 0.45+0.55*sin(uTime*(1.2+st*7.0)+st*90.0);
+    float d = length(fract(sp)-0.5);
+    c += mix(vec3(0.7,0.8,1.0), vec3(1.0,0.9,0.8), hash13(id+3.0))
+       * smoothstep(0.18,0.0,d)*tw*(0.25+uAir*1.3);
+  }
+  return c;
+}
+vec3 skyDome(vec3 rd){
+  vec3 col = mix(vec3(0.011,0.016,0.038), vec3(0.0015,0.0025,0.009), clamp(rd.y*1.5,0.0,1.0));
+  col += stars(rd);
+  return col;
+}
+/* 空を見上げる向きにオーロラを積分する */
+vec3 marchAurora(vec3 ro, vec3 rd, float mul){
+  if(rd.y < 0.005) return vec3(0.0);
+  vec3 acc = vec3(0.0);
+  float trans = 1.0;
+  float t = (14.0 - ro.y)/rd.y;
+  float step = 2.2;
+  float jitter = hash12(gl_FragCoord.xy + uTime)*step;
+  t += jitter;
+  for(int i=0;i<48;i++){
+    vec3 p = ro + rd*t;
+    if(p.y > 112.0 || trans < 0.02) break;
+    float d = curtain(p);
+    if(d > 0.001){
+      float dens = d * (0.13 + uLevel*0.26 + uIntensity*0.18);
+      vec3 c = auroraColor(p.y) * dens * (0.5 + uMid*0.9);
+      acc += c * trans * step;
+      trans *= exp(-dens*step*0.5);
+    }
+    t += step * (1.0 + float(i)*0.03);
+  }
+  return acc * mul;
+}
+float ridge(vec2 p){
+  return 5.0 + fbm3(vec3(p*0.010, 0.0), 4)*13.0 + fbm3(vec3(p*0.0027, 7.0), 3)*22.0;
+}
+void main(){
+  vec3 ro = uCamPos;
+  vec3 rd = rayDir(vUv);
+  vec3 col = skyDome(rd);
+  float dist = 900.0;
+  col += marchAurora(ro, rd, 1.0);
+
+  /* 湖面（y=0）：空とオーロラを映す */
+  if(rd.y < -0.002){
+    float t = -ro.y/rd.y;
+    dist = t;
+    vec3 p = ro + rd*t;
+    /* さざなみで反射をゆらす */
+    vec3 n = normalize(vec3(
+      fbm3(vec3(p.xz*0.5, uTime*0.35), 3)*0.055*(0.4+uMid),
+      1.0,
+      fbm3(vec3(p.zx*0.5, uTime*0.3+9.0), 3)*0.055*(0.4+uMid)));
+    vec3 refl = reflect(rd, n);
+    refl.y = abs(refl.y);
+    float fres = mix(0.10, 1.0, pow(1.0-max(dot(-rd,n),0.0), 4.0));
+    vec3 water = mix(vec3(0.0018,0.0028,0.0070), skyDome(refl) + marchAurora(p, refl, 0.72), fres);
+    float fog = 1.0 - exp(-t*0.0022);
+    col = mix(water, skyDome(vec3(rd.x,0.004,rd.z)), fog);
+  }
+
+  /* 稜線のシルエット */
+  {
+    float tm = 900.0;
+    float t = 30.0;
+    for(int i=0;i<52;i++){
+      vec3 p = ro + rd*t;
+      float h = ridge(p.xz);
+      if(p.y < h){ tm = t; break; }
+      t += max(1.6, (p.y-h)*0.55);
+      if(t > 520.0) break;
+    }
+    if(tm < 900.0 && tm < dist){
+      dist = tm;
+      vec3 p = ro + rd*tm;
+      float fog = 1.0 - exp(-tm*0.0050);
+      vec3 m = vec3(0.0035,0.0055,0.0130);
+      /* 稜線の上端だけ、空の光を拾わせる */
+      m += vec3(0.10,0.22,0.24) * smoothstep(0.0, 6.0, p.y - ridge(p.xz) + 6.0) * 0.05 * (0.4+uLevel);
+      col = mix(m, skyDome(vec3(rd.x,0.02,rd.z))*0.6, fog*0.85);
+    }
+  }
+  fragColor = vec4(col, cocOf(min(dist, 900.0)));
+}`;
+
+/* ======================================================================
+   カメラとショット演出
+   固定画角の長回しは必ず単調になるので、曲の区切りで構図を切り替え、
+   ショットの間もカメラを動かし続ける。
+   ====================================================================== */
+class ShotDirector {
+  constructor() {
+    this.shot = null;
+    this.t = 0;
+    this.flash = 0;
+    this.cam = { pos: [0, 2, -8], target: [0, 0, 0], fov: 0.9, roll: 0 };
+  }
+  /** 新しい構図へ切り替える */
+  cut(scene, a, immediate) {
+    const list = scene.shots ? scene.shots(a) : null;
+    if (!list || !list.length) return;
+    let s = list[(Math.random() * list.length) | 0];
+    if (this.shot && list.length > 1) {
+      /* 直前と同じ構図が続かないようにする */
+      let guard = 0;
+      while (s.name === this.shot.name && guard++ < 6) s = list[(Math.random() * list.length) | 0];
+    }
+    this.shot = s;
+    this.t = 0;
+    if (!immediate) this.flash = 1;
+  }
+  update(dt, scene, a) {
+    if (!this.shot) { this.cut(scene, a, true); if (!this.shot) return this.cam; }
+    this.t += dt;
+    const s = this.shot;
+    const k = clamp(this.t / s.dur, 0, 1);
+    /* ゆっくり入ってゆっくり抜ける。カメラは止めない */
+    const e = k * k * (3 - 2 * k) * 0.5 + k * 0.5;
+    const pos = V3.lerp(s.from.pos, s.to.pos, e);
+    const tgt = V3.lerp(s.from.target, s.to.target, e);
+    const fov = lerp(s.from.fov, s.to.fov, e);
+
+    /* 手持ち風の微振動。わずかに入れるだけで実写らしくなる */
+    const amp = (s.shake === undefined ? 1 : s.shake) * (0.5 + a.level * 0.9);
+    const t = a.time;
+    const jx = NOISE.fbm1(t * 0.55, 2) * amp;
+    const jy = NOISE.fbm1(t * 0.62 + 31.7, 2) * amp;
+    const scaleJ = Math.max(0.02, V3.len(V3.sub(pos, tgt)) * 0.010);
+    const fwd = V3.norm(V3.sub(tgt, pos));
+    const right = V3.norm(V3.cross(fwd, [0, 1, 0]));
+    const up = V3.cross(right, fwd);
+    this.cam.pos = V3.add(pos, V3.add(V3.mul(right, jx * scaleJ), V3.mul(up, jy * scaleJ)));
+    this.cam.target = tgt;
+    this.cam.fov = fov * (1 - a.beat * 0.012 * (s.punch === undefined ? 1 : s.punch));
+    this.cam.roll = NOISE.n1(t * 0.4 + 11.3) * 0.028 * amp;
+
+    this.flash = Math.max(0, this.flash - dt * 5.5);
+    return this.cam;
+  }
+  get expired() { return this.shot && this.t >= this.shot.dur; }
+}
+
+/* ======================================================================
+   WebGL レンダラ
+   シーン → HDR → 被写界深度 → ブルーム → 合成（ACES / 色収差 / 粒状）
+   ====================================================================== */
+class GLRenderer {
+  constructor(canvas) {
+    this.gl = new GLEngine(canvas);
+    this.canvas = canvas;
+    this.scenes = [];
+    this.cur = 0;
+    this.director = new ShotDirector();
+    this.bloom = 0.85;
+    this.film = 0.7;
+    this.quality = 1;
+    this.ripples = new Float32Array(32);
+    this._rip = [];
+    this.autoShot = true;
+    this.shotClock = 0;
+    this._fpsAcc = 0; this._fpsN = 0; this._downgraded = false;
+
+    const g = this.gl;
+    this.pDown = g.program('down', VS_QUAD, FS_DOWN);
+    this.pUp = g.program('up', VS_QUAD, FS_UP);
+    this.pDof = g.program('dof', VS_QUAD, FS_DOF);
+    this.pComp = g.program('comp', VS_QUAD, FS_COMPOSITE);
+  }
+  add(scene) { scene.init(this.gl); this.scenes.push(scene); return scene; }
+
+  resize() {
+    const gl = this.gl.gl;
+    const w = window.innerWidth, h = window.innerHeight;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2) * this.quality;
+    const W = this.W = Math.max(2, Math.round(w * dpr));
+    const H = this.H = Math.max(2, Math.round(h * dpr));
+    this.canvas.width = W; this.canvas.height = H;
+    this.canvas.style.width = w + 'px';
+    this.canvas.style.height = h + 'px';
+    this.gl.W = W; this.gl.H = H;
+
+    const mk = (a, b, o) => this.gl.makeFBO(Math.max(2, a), Math.max(2, b), o);
+    this.fbScene = mk(W, H, { depth: true });
+    this.fbDof = mk(W, H, {});
+    this.mips = [];
+    let mw = W >> 1, mh = H >> 1;
+    for (let i = 0; i < 6 && mw > 4 && mh > 4; i++) {
+      this.mips.push(mk(mw, mh, {}));
+      mw >>= 1; mh >>= 1;
+    }
+    for (const s of this.scenes) if (s.resize) s.resize(W, H);
+  }
+
+  select(i, instant) {
+    if (i === this.cur) return;
+    this.cur = i;
+    this.director.shot = null;
+    this.director.cut(this.scenes[i], { level: 0, time: 0 }, !!instant);
+    this.director.flash = instant ? 0 : 1;
+    this.shotClock = 0;
+    if (this.scenes[i].enter) this.scenes[i].enter();
+  }
+
+  /** ビートで波紋を足す（海のシーンが読む） */
+  addRipple(x, z, strength) {
+    this._rip.push({ x, z, t: 0, s: strength });
+    if (this._rip.length > 8) this._rip.shift();
+  }
+
+  frame(a) {
+    const g = this.gl, gl = g.gl;
+    const scene = this.scenes[this.cur];
+
+    /* --- ショットの切り替え --- */
+    this.shotClock += a.dt;
+    if (this.autoShot && this.director.expired) this.director.cut(scene, a);
+    const cam = this.director.update(a.dt, scene, a);
+
+    /* --- 波紋の寿命 --- */
+    for (let i = this._rip.length - 1; i >= 0; i--) {
+      const r = this._rip[i];
+      r.t += a.dt;
+      if (r.t > 6) this._rip.splice(i, 1);
+    }
+    this.ripples.fill(0);
+    this._rip.forEach((r, i) => {
+      if (i > 7) return;
+      this.ripples[i * 4] = r.x; this.ripples[i * 4 + 1] = r.z;
+      this.ripples[i * 4 + 2] = r.t; this.ripples[i * 4 + 3] = r.s;
+    });
+
+    const focus = scene.focus ? scene.focus(cam, a) : 20;
+    const common = {
+      uRes: [this.W, this.H],
+      uTime: a.time,
+      uCamPos: cam.pos,
+      uCamMat: lookMatrix(cam.pos, cam.target, cam.roll),
+      uFov: cam.fov,
+      uFocus: focus,
+      uAperture: (scene.aperture === undefined ? 1 : scene.aperture) * 1.15,
+      uBass: a.bass, uSub: a.sub, uLowMid: a.lowMid, uMid: a.mid,
+      uHighMid: a.highMid, uHigh: a.high, uAir: a.air,
+      uLevel: a.level, uIntensity: a.intensity, uBeat: a.beat,
+      uHue: scene.hue || [1, 0.78, 0.5],
+      'uRipple[0]': this.ripples
+    };
+
+    /* --- シーン --- */
+    g.clear(this.fbScene, 0, 0, 0, 0);
+    scene.draw(g, common, a, this);
+
+    /* --- 被写界深度 --- */
+    let src = this.fbScene;
+    const dofAmt = (scene.dof === undefined ? 1 : scene.dof) * 0.055;
+    if (dofAmt > 0.001) {
+      g.blit(this.pDof, {
+        uTex: this.fbScene, uTexel: [1 / this.W, 1 / this.H], uStrength: dofAmt
+      }, this.fbDof);
+      src = this.fbDof;
+    }
+
+    /* --- ブルーム（縮小 → 拡大しながら加算） --- */
+    gl.disable(gl.BLEND);
+    for (let i = 0; i < this.mips.length; i++) {
+      const from = i === 0 ? src : this.mips[i - 1];
+      g.blit(this.pDown, {
+        uTex: from, uTexel: [1 / from.w, 1 / from.h], uThreshold: i === 0 ? 1.05 : 0.0
+      }, this.mips[i]);
+    }
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    for (let i = this.mips.length - 1; i > 0; i--) {
+      const from = this.mips[i];
+      g.blit(this.pUp, { uTex: from, uTexel: [1 / from.w, 1 / from.h] }, this.mips[i - 1]);
+    }
+    gl.disable(gl.BLEND);
+
+    /* --- 合成 --- */
+    const f = this.film;
+    g.blit(this.pComp, {
+      uScene: src,
+      uBloom: this.mips[0],
+      uRes: [this.W, this.H],
+      uTime: a.time,
+      uBloomAmt: this.bloom * 0.055,
+      uCA: f * 1.0,
+      uVignette: clamp(f, 0, 1) * 0.85,
+      uGrain: f * 0.055,
+      uStreak: f * 0.09 * (0.4 + a.intensity * 0.8),
+      uExposure: (scene.exposure || 1) * (1 + this.director.flash * 0.55),
+      uLift: f
+    }, null);
+
+    /* --- 負荷が高いときは解像度を落とす --- */
+    this._fpsAcc += a.dt; this._fpsN++;
+    if (this._fpsAcc > 3) {
+      const fps = this._fpsN / this._fpsAcc;
+      if (fps < 32 && this.quality > 0.55) { this.quality *= 0.72; this.resize(); }
+      this._fpsAcc = 0; this._fpsN = 0;
+    }
+  }
+}
+
+/* ----------------------------------------------------------------------
+   シーンの土台
+   ---------------------------------------------------------------------- */
+class GLScene {
+  constructor(name, en) {
+    this.name = name; this.en = en;
+    this.palette = [];
+    this.dof = 1;
+    this.aperture = 1;
+    this.exposure = 1;
+  }
+  init() {}
+  resize() {}
+  enter() {}
+  focus() { return 20; }
+  shots() { return []; }
+  draw() {}
+}
+
+/** 画面いっぱいのフラグメントシェーダで描くシーン */
+class RaymarchScene extends GLScene {
+  constructor(name, en, fs) { super(name, en); this._fs = fs; }
+  init(g) { this.prog = g.program('scene:' + this.en, VS_QUAD, this._fs); }
+  draw(g, uniforms, a, r) {
+    const gl = g.gl;
+    gl.disable(gl.BLEND);
+    g.blit(this.prog, uniforms, r.fbScene);
+  }
+}
+
+/* ======================================================================
+   点群シーンの共通部
+   すべての粒を 3D 空間に置き、カメラで投影する。ピントから外れた粒は
+   大きく淡く広がり、そのままレンズのボケになる。
+   ====================================================================== */
+const GLSL_POINT_VS = `#version 300 es
+precision highp float;
+uniform vec2  uRes;
+uniform vec3  uCamPos;
+uniform mat3  uCamMat;
+uniform float uFov, uFocus, uAperture, uTime;
+uniform float uBass, uSub, uLowMid, uMid, uHighMid, uHigh, uAir;
+uniform float uLevel, uIntensity, uBeat;
+uniform vec3  uHue;
+out vec3 vCol;
+out float vFade;
+
+float hash11(float p){ p = fract(p*0.1031); p *= p+33.33; p *= p+p; return fract(p); }
+float noise3(vec3 x){
+  vec3 i = floor(x), f = fract(x);
+  f = f*f*(3.0-2.0*f);
+  float n = i.x + i.y*157.0 + 113.0*i.z;
+  return mix(mix(mix(hash11(n+0.0),   hash11(n+1.0),   f.x),
+                 mix(hash11(n+157.0), hash11(n+158.0), f.x), f.y),
+             mix(mix(hash11(n+113.0), hash11(n+114.0), f.x),
+                 mix(hash11(n+270.0), hash11(n+271.0), f.x), f.y), f.z)*2.0-1.0;
+}
+
+/* 世界座標の粒を投影する。ボケの分だけ大きく、そのぶん暗くする */
+void project(vec3 wp, float size, float bright){
+  vec3 rel = wp - uCamPos;
+  vec3 v = vec3(dot(rel,uCamMat[0]), dot(rel,uCamMat[1]), dot(rel,uCamMat[2]));
+  if(v.z < 0.2){ gl_Position = vec4(2.0,2.0,2.0,1.0); vFade = 0.0; gl_PointSize = 0.0; return; }
+  float f = 1.0/tan(uFov*0.5);
+  gl_Position = vec4(v.x*f/(uRes.x/uRes.y), v.y*f, 0.0, v.z);
+  float coc = clamp(abs(1.0/v.z - 1.0/max(uFocus,0.05))*uFocus*uAperture, 0.0, 1.0);
+  float px  = size*f/v.z*uRes.y*0.5;
+  float mag = 1.0 + coc*13.0;
+  gl_PointSize = clamp(px*mag, 1.0, 44.0);
+  /* 広がった面積のぶんだけ暗くする（明るさの総量を保つ） */
+  vFade = bright/(mag*mag);
+}
+`;
+
+const FS_POINT = `#version 300 es
+precision highp float;
+in vec3 vCol;
+in float vFade;
+out vec4 fragColor;
+void main(){
+  vec2 d = gl_PointCoord*2.0-1.0;
+  float r2 = dot(d,d);
+  if(r2 > 1.0) discard;
+  /* 中心が明るく縁がやわらかい粒。外周をわずかに残してボケの輪郭を作る */
+  float a = exp(-r2*2.4)*(1.0-r2*r2) + 0.06*(1.0-smoothstep(0.75,1.0,r2));
+  fragColor = vec4(vCol*a*vFade, 0.0);
+}`;
+
+/* 点群シーンの背景（空／虚空のグラデーションと星） */
+const FS_BG = GLSL_COMMON + `
+uniform float uStars, uGround;
+void main(){
+  vec3 rd = rayDir(vUv);
+  float h = rd.y;
+  vec3 col = mix(uHue*0.055, vec3(0.006,0.008,0.020), clamp(h*1.2+0.35, 0.0, 1.0));
+  col += uHue*0.05*exp(-abs(h)*7.0)*(0.5+uLevel);
+  if(uStars > 0.5 && h > -0.05){
+    vec3 sp = rd*80.0;
+    vec3 id = floor(sp);
+    float st = hash13(id);
+    if(st > 0.982){
+      float tw = 0.4+0.6*sin(uTime*(1.0+st*8.0)+st*70.0);
+      float d = length(fract(sp)-0.5);
+      col += vec3(0.75,0.82,1.0)*smoothstep(0.2,0.0,d)*tw*(0.35+uAir*1.8);
+    }
+  }
+  if(uGround > 0.5 && h < -0.004){
+    /* 遠くまで続く地面の霞 */
+    float t = -uCamPos.y/h;
+    col = mix(col, uHue*0.045, exp(-t*0.004));
+  }
+  fragColor = vec4(col, 1.0);
+}`;
+
+/** CPU で作った静的な点群を描くシーン */
+class PointScene extends GLScene {
+  constructor(name, en, vsBody) {
+    super(name, en);
+    this.vsBody = vsBody;
+    this.attribs = [];      // {name, size, data}
+    this.count = 0;
+    this.sub = 1;           // 1 粒あたりの描画数（モーションブラー用）
+    this.stars = 0;
+    this.ground = 0;
+  }
+  buildPoints() { return { count: 0, attribs: [] }; }
+
+  init(g) {
+    const gl = g.gl;
+    this.progBg = g.program('bg', VS_QUAD, FS_BG);
+    this.prog = g.program('pts:' + this.en, GLSL_POINT_VS + this.vsBody, FS_POINT);
+    const built = this.buildPoints();
+    this.count = built.count;
+    this.vao = gl.createVertexArray();
+    gl.bindVertexArray(this.vao);
+    let loc = 1;
+    for (const at of built.attribs) {
+      const buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, at.data, gl.STATIC_DRAW);
+      const l = gl.getAttribLocation(this.prog.p, at.name);
+      if (l >= 0) {
+        gl.enableVertexAttribArray(l);
+        gl.vertexAttribPointer(l, at.size, gl.FLOAT, false, 0, 0);
+        if (this.sub > 1) gl.vertexAttribDivisor(l, 0);
+      }
+      loc++;
+    }
+    gl.bindVertexArray(null);
+  }
+
+  extraUniforms() { return {}; }
+
+  draw(g, uniforms, a, r) {
+    const gl = g.gl;
+    gl.disable(gl.BLEND);
+    g.blit(this.progBg, Object.assign({ uStars: this.stars, uGround: this.ground }, uniforms), r.fbScene);
+    g.bind(r.fbScene);
+    gl.useProgram(this.prog.p);
+    g.setUniforms(this.prog, Object.assign({}, uniforms, this.extraUniforms(a)));
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.disable(gl.DEPTH_TEST);
+    gl.bindVertexArray(this.vao);
+    gl.drawArrays(gl.POINTS, 0, this.count);
+    gl.disable(gl.BLEND);
+  }
+}
+
+/* ================================================================
+   シーン 1 ── 光の波紋（夕暮れの海）
+   ================================================================ */
+class OceanScene extends RaymarchScene {
+  constructor() {
+    super('光の波紋', 'Ripples', FS_OCEAN);
+    this.palette = [['#ffeccb', '白光'], ['#ffc182', '琥珀'], ['#8d5f5a', '残照'], ['#1a1a2e', '宵'], ['#03040a', '夜']];
+    this.hue = [1.0, 0.68, 0.40];
+    this.dof = 1; this.aperture = 0.18;
+  }
+  focus(cam) { return clamp(V3.len(V3.sub(cam.target, cam.pos)) * 0.6, 8, 80); }
+  shots() {
+    return [
+      { name: 'wide', dur: 13, shake: 0.8,
+        from: { pos: [-4, 7.0, -46], target: [0, 3, 60], fov: 0.86 },
+        to:   { pos: [ 4, 5.5, -28], target: [0, 3, 60], fov: 0.82 } },
+      { name: 'skim', dur: 11, shake: 1.3,
+        from: { pos: [-14, 1.1, -14], target: [-2, 2.0, 46], fov: 1.02 },
+        to:   { pos: [ 10, 0.9,  -2], target: [ 4, 2.0, 46], fov: 1.02 } },
+      { name: 'tele', dur: 10, shake: 1.6,
+        from: { pos: [1.5, 2.2, 2],  target: [0, 2.4, 60], fov: 0.42 },
+        to:   { pos: [-1.5, 1.8, 12], target: [0, 2.4, 60], fov: 0.38 } },
+      { name: 'crane', dur: 14, shake: 0.5,
+        from: { pos: [0, 22, -70], target: [0, 2, 50], fov: 0.95 },
+        to:   { pos: [0,  4, -34], target: [0, 3, 60], fov: 0.88 } },
+      { name: 'drift', dur: 12, shake: 1.0,
+        from: { pos: [18, 2.6, -30], target: [2, 2.2, 50], fov: 0.72 },
+        to:   { pos: [-8, 2.0, -18], target: [2, 2.2, 50], fov: 0.72 } }
+    ];
+  }
+}
+
+/* ================================================================
+   シーン 2 ── オーロラ・ドリフト
+   ================================================================ */
+class AuroraGLScene extends RaymarchScene {
+  constructor() {
+    super('オーロラ・ドリフト', 'Aurora', FS_AURORA);
+    this.palette = [['#4be0a0', '翠'], ['#5ec8ff', '空'], ['#a479ff', '菫'], ['#0a1430', '群青'], ['#02040f', '山影']];
+    this.hue = [0.35, 0.95, 0.75];
+    this.dof = 0.8; this.aperture = 0.12;
+  }
+  focus() { return 90; }
+  shots() {
+    return [
+      { name: 'lake', dur: 14, shake: 0.7,
+        from: { pos: [-16, 2.4, -120], target: [0, 40, 40], fov: 1.00 },
+        to:   { pos: [ 14, 3.0, -100], target: [0, 42, 40], fov: 0.96 } },
+      { name: 'up', dur: 12, shake: 1.1,
+        from: { pos: [0, 3.0, -60], target: [-10, 78, 30], fov: 1.16 },
+        to:   { pos: [0, 5.0, -34], target: [ 12, 82, 30], fov: 1.16 } },
+      { name: 'ridge', dur: 13, shake: 0.6,
+        from: { pos: [-90, 16, -150], target: [30, 46, 40], fov: 0.80 },
+        to:   { pos: [-40, 12, -120], target: [10, 44, 40], fov: 0.80 } },
+      { name: 'tele', dur: 10, shake: 1.5,
+        from: { pos: [6, 6, -80], target: [-6, 52, 60], fov: 0.44 },
+        to:   { pos: [-6, 8, -70], target: [ 8, 56, 60], fov: 0.42 } },
+      { name: 'glide', dur: 15, shake: 0.9,
+        from: { pos: [40, 8, -140], target: [0, 44, 20], fov: 0.92 },
+        to:   { pos: [-30, 6, -105], target: [0, 40, 20], fov: 0.92 } }
+    ];
+  }
+}
+
+/* ================================================================
+   シーン 3 ── 水の流れ
+   何本もの流れ（3D の曲線）に沿って粒を走らせる。カメラが流れの
+   あいだを抜けるので、手前の粒は大きなボケになって奥行きが出る。
+   ================================================================ */
+const VS_WATER = `
+uniform float uFlow;
+/* 1 本の流れを表す曲線 */
+vec3 stream(float s, float ph, float amp){
+  return vec3(
+    sin(s*0.055 + ph)*26.0*amp + sin(s*0.17 + ph*2.3)*6.0,
+    cos(s*0.041 + ph*1.7)*13.0*amp + sin(s*0.21 + ph)*3.5 + 2.0,
+    s);
+}
+void main(){
+  int id  = gl_VertexID/3;
+  int sub = gl_VertexID%3;
+  float f = float(id);
+  float h1 = hash11(f*0.0173);
+  float h2 = hash11(f*0.0371+5.7);
+  float h3 = hash11(f*0.0917+2.3);
+  float h4 = hash11(f*0.1531+9.1);
+  float ribbon = floor(h1*26.0);
+  float ph = ribbon*2.399 + 0.7;
+  float amp = 0.55 + hash11(ribbon*0.37)*0.8;
+  /* 流れに沿って進み、端まで行くと戻る */
+  float span = 340.0;
+  float speed = 26.0 + uMid*54.0 + uLowMid*22.0;
+  float s = mod(h2*span + (uTime - float(sub)*0.010)*speed*uFlow, span) - span*0.5;
+  vec3 wp = stream(s, ph, amp);
+  /* 流れの周りに散らして、束に太さを持たせる */
+  float rad = (0.5 + h3*3.4)*(0.7 + uLevel*0.7);
+  float aRad = h4*6.2831 + uTime*(0.4+uMid);
+  wp += vec3(cos(aRad), sin(aRad), 0.0)*rad;
+  wp.y += sin(uTime*1.3 + f*0.7)*0.5;
+  /* 飛沫：ビートで外へ弾ける */
+  wp += normalize(vec3(cos(aRad), sin(aRad), 0.2))*uBeat*(1.0+h3*7.0)*(0.4+uBass);
+  vec3 col = mix(vec3(0.22,0.55,1.0), vec3(0.80,0.95,1.0), h3*h3);
+  col = mix(col, vec3(1.0), smoothstep(0.90,1.0,h4)*0.8);
+  float br = (0.20 + uLevel*0.52)*(0.35+h3*0.9)/3.0;
+  project(wp, 0.055 + h3*0.10, br);
+  vCol = col;
+}`;
+
+class WaterGLScene extends PointScene {
+  constructor() {
+    super('水の流れ', 'Water', VS_WATER);
+    this.palette = [['#d7f6ff', '飛沫'], ['#78cdff', '水浅葱'], ['#408eee', '藍'], ['#07142a', '深水'], ['#01030a', '淵']];
+    this.hue = [0.16, 0.42, 0.85];
+    this.aperture = 1.5; this.dof = 0; this.stars = 0;
+    this.n = 60000;
+  }
+  buildPoints() { return { count: this.n * 3, attribs: [] }; }
+  extraUniforms() { return { uFlow: 1 }; }
+  focus(cam) { return clamp(V3.len(V3.sub(cam.target, cam.pos)) * 0.75, 6, 60); }
+  shots() {
+    return [
+      { name: 'through', dur: 12, shake: 1.4,
+        from: { pos: [0, 4, -70], target: [0, 3, 30], fov: 1.05 },
+        to:   { pos: [0, 3, 10],  target: [0, 3, 90], fov: 1.05 } },
+      { name: 'side', dur: 11, shake: 1.0,
+        from: { pos: [46, 8, -20], target: [0, 2, 10], fov: 0.72 },
+        to:   { pos: [30, 4, 26],  target: [0, 2, 20], fov: 0.72 } },
+      { name: 'macro', dur: 9, shake: 2.0,
+        from: { pos: [4, 2, -6], target: [0, 2, 12], fov: 0.55 },
+        to:   { pos: [-3, 3, 4], target: [0, 2, 20], fov: 0.50 } },
+      { name: 'top', dur: 12, shake: 0.8,
+        from: { pos: [-10, 40, -40], target: [0, 0, 20], fov: 0.85 },
+        to:   { pos: [ 14, 26, 10],  target: [0, 0, 40], fov: 0.85 } }
+    ];
+  }
+}
+
+/* ================================================================
+   シーン 5 ── 星屑の軌跡
+   ================================================================ */
+const VS_STARS = `
+uniform float uSpin, uKick;
+void main(){
+  int id  = gl_VertexID/3;
+  int sub = gl_VertexID%3;
+  float tb = -float(sub)*0.012;
+  float f = float(id);
+  float h1 = hash11(f*0.0173);
+  float h2 = hash11(f*0.0371+7.1);
+  float h3 = hash11(f*0.0917+3.3);
+  float h4 = hash11(f*0.1531+11.7);
+  float R = 78.0;
+  float u = pow(h1, 0.60);
+  float r0 = R*(0.035 + u*0.99);
+  float arm = floor(h2*3.0)*2.0943951;
+  float spiral = log(r0/(R*0.035))*1.95;
+  float jit = (h3-0.5)*(0.45 + (1.0-u)*1.25);
+  /* 内側ほど速く回る */
+  float th = arm + spiral + jit + (uTime+tb)*(0.62/(0.30 + r0/R))*0.42 + uSpin;
+  float r = r0*(1.0 + uKick*(0.08 + h4*0.20));
+  float y = (h4-0.5)*R*0.085*exp(-u*2.1);
+  vec3 wp = vec3(cos(th)*r, y, sin(th)*r);
+  vec3 col = mix(vec3(1.0,0.80,0.46), vec3(0.62,0.74,1.0), smoothstep(0.10,0.50,u));
+  col = mix(col, vec3(0.78,0.56,1.0), smoothstep(0.55,1.0,u)*0.75);
+  float tw = 0.55 + 0.45*sin(uTime*2.2 + f*0.37);
+  float br = (0.10 + uLevel*0.30)*(1.25-u*0.55)*tw/3.0;
+  /* 中心ほど密で明るい */
+  br *= 1.0 + smoothstep(0.25,0.0,u)*2.2*(0.5+uBass);
+  project(wp, 0.075 + h3*0.14, br);
+  vCol = col;
+}`;
+
+class StardustGLScene extends PointScene {
+  constructor() {
+    super('星屑の軌跡', 'Stardust', VS_STARS);
+    this.palette = [['#fffdf5', '核'], ['#ffce8c', '金'], ['#96beff', '星'], ['#be96ff', '星雲'], ['#010106', '虚空']];
+    this.hue = [0.30, 0.34, 0.72];
+    this.aperture = 1.2; this.dof = 0; this.stars = 1;
+    this.n = 90000;
+    this.spin = 0; this.kick = 0;
+  }
+  buildPoints() { return { count: this.n * 3, attribs: [] }; }
+  enter() { this.spin = 0; this.kick = 0; }
+  extraUniforms(a) {
+    this.spin += a.dt * (0.02 + a.mid * 0.10);
+    this.kick = a.hit ? Math.max(this.kick, a.beatStrength) : approach(this.kick, 0, 2.2, a.dt);
+    return { uSpin: this.spin, uKick: this.kick };
+  }
+  focus(cam) { return clamp(V3.len(cam.pos) * 0.85, 20, 160); }
+  shots() {
+    return [
+      { name: 'edge', dur: 14, shake: 0.6,
+        from: { pos: [-140, 8, -110], target: [0, 0, 0], fov: 0.82 },
+        to:   { pos: [-90, 16, -70],  target: [0, 0, 0], fov: 0.78 } },
+      { name: 'top', dur: 13, shake: 0.5,
+        from: { pos: [0, 150, -60], target: [0, 0, 0], fov: 0.90 },
+        to:   { pos: [40, 105, -30], target: [0, 0, 0], fov: 0.86 } },
+      { name: 'dive', dur: 11, shake: 1.3,
+        from: { pos: [90, 40, -90], target: [0, 0, 0], fov: 1.0 },
+        to:   { pos: [22, 8, -26],  target: [0, 0, 0], fov: 1.0 } },
+      { name: 'inside', dur: 10, shake: 1.8,
+        from: { pos: [30, 2, -18], target: [-20, 0, 30], fov: 0.62 },
+        to:   { pos: [10, 3, 6],   target: [-40, 0, 20], fov: 0.58 } },
+      { name: 'tilt', dur: 15, shake: 0.7,
+        from: { pos: [-60, 55, -140], target: [0, 0, 0], fov: 0.70 },
+        to:   { pos: [ 60, 30, -120], target: [0, 0, 0], fov: 0.70 } }
+    ];
+  }
+}
+
+/* ================================================================
+   シーン 4 ── 光の樹
+   枝に沿って粒を並べた 3D の点群。幹は CPU で生成し、揺れと成長は
+   頂点シェーダで与える。
+   ================================================================ */
+const VS_TREE = `
+in vec3 aPos; in vec3 aInfo;   // aInfo = (成長開始, 種, 種別 0=枝 1=葉)
+uniform float uGrow, uBloomAmt2;
+void main(){
+  float t0 = aInfo.x, seed = aInfo.y, kind = aInfo.z;
+  float grow = clamp((uGrow - t0)/0.14, 0.0, 1.0);
+  if(grow <= 0.001){ gl_Position = vec4(2.0,2.0,2.0,1.0); vFade = 0.0; gl_PointSize = 0.0; return; }
+  vec3 wp = aPos;
+  /* 高いところほど大きくしなる */
+  float hh = max(0.0, wp.y);
+  float sway = (0.010 + uMid*0.055 + uLowMid*0.02) * hh * hh * 0.02;
+  float ang = sin(uTime*0.9 + seed*3.1 + hh*0.05)*sway;
+  wp.xz = mat2(cos(ang), -sin(ang), sin(ang), cos(ang)) * wp.xz;
+  wp.x += sin(uTime*1.7 + seed*5.0)*sway*3.0;
+  /* 幹の根元から順に伸びる。伸びきる前は根元寄りに縮める */
+  wp *= mix(0.55, 1.0, grow);
+
+  vec3 col;
+  float br, size;
+  if(kind > 0.5){
+    /* 葉：高音ときらめきで明滅する */
+    float fl = 0.45 + 0.55*sin(uTime*(1.6+seed*3.0) + seed*7.0);
+    col = mix(vec3(1.0,0.80,0.42), vec3(1.0,0.97,0.90), uBloomAmt2);
+    br = (0.55 + uHigh*1.5 + uAir*0.9 + uBloomAmt2*1.3)*fl*grow;
+    size = 0.055 + 0.10*uBloomAmt2 + seed*0.03;
+  } else {
+    col = mix(vec3(1.0,0.62,0.26), vec3(1.0,0.90,0.72), smoothstep(0.0,26.0,hh));
+    br = (0.75 + uLevel*1.0)*grow;
+    size = 0.055 + (1.0-smoothstep(0.0,20.0,hh))*0.09;
+  }
+  project(wp, size, br);
+  vCol = col;
+}`;
+
+class TreeGLScene extends PointScene {
+  constructor() {
+    super('光の樹', 'Tree', VS_TREE);
+    this.palette = [['#fffcf2', '芯'], ['#ffe2aa', '灯'], ['#ffa846', '琥珀'], ['#12080a', '土'], ['#04030a', '闇']];
+    this.hue = [0.55, 0.30, 0.14];
+    this.aperture = 1.1; this.dof = 0; this.ground = 1;
+    this.grow = 0.5; this.bloom2 = 0;
+  }
+  /* 枝を 3D で生成し、その上に粒を撒く */
+  buildPoints() {
+    const rnd = makeRng(1357);
+    const pos = [], info = [];
+    const MAXD = 9;
+    const put = (p, t0, seed, kind) => {
+      pos.push(p[0], p[1], p[2]);
+      info.push(t0, seed, kind);
+    };
+    const branch = (from, dir, len, thick, depth) => {
+      const to = V3.add(from, V3.mul(dir, len));
+      const t0 = depth / (MAXD + 1);
+      const seed = rnd() * 10;
+      /* 枝に沿って粒を並べる。太い枝ほど密に */
+      const n = Math.max(6, Math.round(len * (5.0 + (MAXD - depth) * 2.2)));
+      for (let i = 0; i < n; i++) {
+        const k = i / n;
+        const p = V3.lerp(from, to, k);
+        const jitter = thick * 0.5;
+        put([p[0] + (rnd() - 0.5) * jitter, p[1] + (rnd() - 0.5) * jitter, p[2] + (rnd() - 0.5) * jitter],
+            t0 + k * 0.02, seed, 0);
+      }
+      if (depth >= MAXD) {
+        /* 枝先の灯り */
+        for (let i = 0; i < 30; i++) {
+          const r = 0.9 + rnd() * 1.9;
+          const th = rnd() * TAU, ph = Math.acos(rnd() * 2 - 1);
+          put([to[0] + Math.sin(ph) * Math.cos(th) * r,
+               to[1] + Math.cos(ph) * r * 0.8,
+               to[2] + Math.sin(ph) * Math.sin(th) * r], t0, rnd() * 10, 1);
+        }
+        return;
+      }
+      const kids = depth === 0 ? 2 : (rnd() < 0.28 ? 3 : 2);
+      for (let k = 0; k < kids; k++) {
+        /* 上向きに寄せつつ、3D 方向へ枝分かれさせる */
+        const az = rnd() * TAU;
+        const open = 0.42 + rnd() * 0.30;
+        let d = V3.norm([
+          dir[0] + Math.cos(az) * open, dir[1] + 0.55 * open, dir[2] + Math.sin(az) * open
+        ]);
+        d = V3.norm([d[0], d[1] * 0.9 + 0.28, d[2]]);
+        branch(to, d, len * (0.70 + rnd() * 0.14), thick * 0.68, depth + 1);
+      }
+    };
+    branch([0, 0, 0], [0, 1, 0], 11, 1.6, 0);
+    return {
+      count: pos.length / 3,
+      attribs: [
+        { name: 'aPos', size: 3, data: new Float32Array(pos) },
+        { name: 'aInfo', size: 3, data: new Float32Array(info) }
+      ]
+    };
+  }
+  enter() { this.grow = 0.45; this.bloom2 = 0; }
+  extraUniforms(a) {
+    const target = clamp(0.46 + a.intensity * 0.54, 0, 1);
+    this.grow = approach(this.grow, target, target > this.grow ? 0.9 : 0.3, a.dt);
+    this.bloom2 = approach(this.bloom2, smoothstep(0.6, 0.92, a.intensity), 1.4, a.dt);
+    return { uGrow: this.grow, uBloomAmt2: this.bloom2 };
+  }
+  focus(cam) { return clamp(V3.len(V3.sub([0, 22, 0], cam.pos)), 8, 120); }
+  shots() {
+    return [
+      { name: 'hero', dur: 13, shake: 0.7,
+        from: { pos: [-16, 12, -58], target: [0, 24, 0], fov: 0.86 },
+        to:   { pos: [ 12, 8, -44],  target: [0, 22, 0], fov: 0.82 } },
+      { name: 'orbit', dur: 15, shake: 0.5,
+        from: { pos: [-48, 18, -20], target: [0, 22, 0], fov: 0.78 },
+        to:   { pos: [ 20, 14, -48], target: [0, 22, 0], fov: 0.78 } },
+      { name: 'canopy', dur: 11, shake: 1.4,
+        from: { pos: [4, 30, -18], target: [0, 34, 2], fov: 0.62 },
+        to:   { pos: [-6, 34, -12], target: [2, 36, 0], fov: 0.58 } },
+      { name: 'root', dur: 10, shake: 1.6,
+        from: { pos: [6, 1.6, -13], target: [0, 20, 0], fov: 1.05 },
+        to:   { pos: [-4, 2.6, -9], target: [0, 24, 0], fov: 1.05 } },
+      { name: 'far', dur: 14, shake: 0.4,
+        from: { pos: [40, 26, -96], target: [0, 20, 0], fov: 0.52 },
+        to:   { pos: [10, 20, -80], target: [0, 22, 0], fov: 0.50 } }
+    ];
+  }
+}
+
+/* ================================================================
+   シーン 6 ── 花の呼吸
+   花びらを 3D の点群で作り、開閉を頂点シェーダで曲げて表現する。
+   ================================================================ */
+const VS_FLOWER = `
+in vec3 aLocal;   // (幅方向 -1..1, 根元→先端 0..1, 花びら内の乱数)
+in vec3 aPetal;   // (向き, 層, 種)
+uniform float uOpen;
+void main(){
+  float ang = aPetal.x, layer = aPetal.y, seed = aPetal.z;
+  float len = mix(9.0, 3.4, layer/5.0);
+  float wide = mix(2.6, 1.1, layer/5.0);
+  /* 開くほど外へ倒れる。内側の層ほど遅れて開く */
+  float op = clamp(uOpen - layer*0.055, 0.0, 1.2);
+  float bend = mix(0.16, 1.42, op) + sin(uTime*0.8 + seed*4.0)*(0.02 + uMid*0.06);
+  float v = aLocal.y;
+  float th = bend*v;
+  /* 根元から先端へ、円弧を描いて倒れる */
+  float rr = sin(th)/max(bend,0.001)*len + 0.7 + layer*0.16;
+  float yy = (1.0-cos(th))/max(bend,0.001)*len*0.55;
+  yy = mix(v*len, yy, 0.9);
+  float halfW = wide*sin(v*3.14159)*0.85;
+  vec3 wp;
+  wp.x = cos(ang)*rr - sin(ang)*aLocal.x*halfW;
+  wp.z = sin(ang)*rr + cos(ang)*aLocal.x*halfW;
+  wp.y = yy*(1.0 - abs(aLocal.x)*0.25) + 1.0;
+  /* 花びらの縁ほど淡く、中央の脈が明るい */
+  float edge = 1.0 - abs(aLocal.x);
+  vec3 col = mix(vec3(1.0,0.35,0.72), vec3(0.72,0.42,1.0), layer/5.0);
+  col = mix(col, vec3(1.0,0.92,0.80), pow(1.0-v, 2.5)*0.85);
+  float br = (0.26 + uLevel*0.72)*(0.35 + edge*0.9)*(0.4 + (1.0-v)*0.9);
+  br *= 1.0 + uBeat*0.5;
+  project(wp, 0.055 + seed*0.045, br);
+  vCol = col;
+}`;
+
+class FlowerGLScene extends PointScene {
+  constructor() {
+    super('花の呼吸', 'Bloom', VS_FLOWER);
+    this.palette = [['#fff6e0', '蕊'], ['#ff8fd0', '桃'], ['#c86bff', '藤'], ['#150a18', '夜'], ['#030106', '闇']];
+    this.hue = [0.42, 0.16, 0.40];
+    this.aperture = 1.6; this.dof = 0;
+    this.open = 0.3;
+  }
+  buildPoints() {
+    const rnd = makeRng(8642);
+    const local = [], petal = [];
+    const layers = [13, 11, 9, 8, 7, 6];
+    layers.forEach((n, li) => {
+      for (let i = 0; i < n; i++) {
+        const ang = (i / n) * TAU + li * 0.42;
+        const seed = rnd();
+        const per = 900;
+        for (let k = 0; k < per; k++) {
+          /* 花びら面に一様に撒く。縁を少し濃くする */
+          const v = Math.pow(rnd(), 0.75);
+          const u = (rnd() * 2 - 1) * Math.pow(rnd(), 0.35);
+          local.push(u, v, rnd());
+          petal.push(ang, li, seed);
+        }
+      }
+    });
+    /* 花芯 */
+    for (let k = 0; k < 4000; k++) {
+      const r = Math.pow(rnd(), 0.6) * 0.9;
+      const th = rnd() * TAU;
+      local.push(Math.cos(th) * r * 0.4, 0.02 + rnd() * 0.05, rnd());
+      petal.push(th, 5.6, rnd());
+    }
+    return {
+      count: local.length / 3,
+      attribs: [
+        { name: 'aLocal', size: 3, data: new Float32Array(local) },
+        { name: 'aPetal', size: 3, data: new Float32Array(petal) }
+      ]
+    };
+  }
+  enter() { this.open = 0.3; }
+  extraUniforms(a) {
+    const breath = 0.5 + 0.5 * Math.sin(a.time * 0.42);
+    this.open = approach(this.open, clamp(0.18 + breath * 0.24 + a.intensity * 0.55, 0, 1.05), 2.2, a.dt);
+    return { uOpen: this.open };
+  }
+  focus(cam) { return clamp(V3.len(V3.sub([0, 4, 0], cam.pos)), 4, 60); }
+  shots() {
+    return [
+      { name: 'above', dur: 13, shake: 0.6,
+        from: { pos: [0, 26, -12], target: [0, 3, 0], fov: 0.80 },
+        to:   { pos: [6, 20, -16], target: [0, 3, 0], fov: 0.76 } },
+      { name: 'side', dur: 12, shake: 0.9,
+        from: { pos: [-22, 5, -14], target: [0, 5, 0], fov: 0.74 },
+        to:   { pos: [ 16, 7, -20], target: [0, 5, 0], fov: 0.74 } },
+      { name: 'macro', dur: 10, shake: 1.7,
+        from: { pos: [3.0, 5.0, -6.0], target: [0, 3.5, 0], fov: 0.72 },
+        to:   { pos: [-2.4, 4.0, -5.0], target: [0, 3.0, 0], fov: 0.68 } },
+      { name: 'rise', dur: 14, shake: 0.7,
+        from: { pos: [0, 1.6, -22], target: [0, 4, 0], fov: 0.92 },
+        to:   { pos: [0, 15, -18],  target: [0, 3, 0], fov: 0.88 } }
+    ];
+  }
+}
+
 /* ----------------------------------------------------------------------
    4. アプリケーション（UI 配線）
    ---------------------------------------------------------------------- */
 const $ = id => document.getElementById(id);
 const audio = new AudioEngine();
-const renderer = new Renderer($('view'));
 window.__engine = audio;      // 動作確認・拡張用
 
-[new RipplesScene(), new AuroraScene(), new WaterScene(),
- new TreeScene(), new StardustScene(), new FlowerScene()].forEach(s => renderer.add(s));
+/* WebGL2 が使える環境では 3D で描く。使えなければ Canvas 2D に退避する。
+   （WebGL の context 生成に失敗した canvas は 2D として使えるので順序が重要） */
+let renderer, useGL = true;
+try {
+  renderer = new GLRenderer($('view'));
+  [new OceanScene(), new AuroraGLScene(), new WaterGLScene(),
+   new TreeGLScene(), new StardustGLScene(), new FlowerGLScene()].forEach(s => renderer.add(s));
+} catch (e) {
+  console.warn('WebGL を利用できないため 2D で描画します', e);
+  useGL = false;
+  renderer = new Renderer($('view'));
+  [new RipplesScene(), new AuroraScene(), new WaterScene(),
+   new TreeScene(), new StardustScene(), new FlowerScene()].forEach(s => renderer.add(s));
+}
+window.__renderer = renderer;
 
 /* --- シーン選択チップ --- */
 const chipEls = [];
@@ -2723,10 +4162,21 @@ const bar = (id, v) => {
 };
 let uiAcc = 0;
 let silentFor = 0;
+let lastPhase = '';
 function loop() {
   requestAnimationFrame(loop);
   const a = audio.update();
   window.__audio = a;          // デバッグ・拡張用に解析結果を公開
+
+  /* ビートを水面の波紋として渡す */
+  if (a.hit && renderer.addRipple) {
+    renderer.addRipple((Math.random() - 0.5) * 70, 15 + Math.random() * 70, a.beatStrength);
+  }
+  /* 曲が段を上がった瞬間は、構図を切り替える絶好の場所 */
+  if (a.phaseName !== lastPhase) {
+    lastPhase = a.phaseName;
+    if (renderer.director && renderer.director.t > 3) renderer.director.cut(renderer.scenes[renderer.cur], a);
+  }
   renderer.frame(a);
 
   /* 自動シーン切替：指定間隔を過ぎたら、次の拍に合わせて移る
