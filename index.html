@@ -38,14 +38,46 @@
   #phase{margin-top:6px;text-align:right;font-size:11px;letter-spacing:.3em;color:var(--gold);
          opacity:.9;transition:opacity .4s}
 
-  /* 周波数メーター */
-  #meters{position:fixed;right:26px;top:50%;transform:translateY(-50%);z-index:10;
-          display:flex;flex-direction:column;gap:14px;align-items:flex-end}
-  .meter{display:flex;align-items:center;gap:10px}
-  .meter .lbl{font-size:9.5px;letter-spacing:.22em;color:var(--dimmer);width:74px;text-align:right}
-  .meter .bar{width:64px;height:2px;background:rgba(255,255,255,.12);position:relative;overflow:hidden}
+  /* 楽曲情報パネル */
+  #info{
+    position:fixed;right:22px;top:50%;transform:translateY(-50%);z-index:10;width:236px;
+    display:flex;flex-direction:column;gap:0;
+    background:rgba(8,9,14,.42);border:1px solid var(--line);border-radius:14px;
+    padding:16px 16px 14px;backdrop-filter:blur(14px);
+    font-variant-numeric:tabular-nums
+  }
+  body.noinfo #info{display:none}
+  #info .row{display:flex;gap:14px;align-items:baseline;margin-bottom:12px}
+  #info .cell{flex:1;min-width:0}
+  #info .k{display:block;font-size:8.5px;letter-spacing:.28em;color:var(--dimmer);margin-bottom:3px}
+  #info .v{font-size:15px;color:var(--ink);letter-spacing:.05em}
+  #info .v small{font-size:9px;color:var(--dimmer);letter-spacing:.16em;margin-left:3px}
+  #chord{
+    font-size:34px;line-height:1.05;color:var(--gold);letter-spacing:.02em;
+    text-shadow:0 0 26px rgba(255,207,138,.42);margin:2px 0 6px;min-height:36px
+  }
+  #prog{display:flex;gap:5px;flex-wrap:wrap;min-height:17px}
+  #prog span{
+    font-size:9.5px;letter-spacing:.06em;color:var(--dim);border:1px solid var(--line);
+    border-radius:4px;padding:2px 5px
+  }
+  #prog span.now{color:#120d06;background:var(--gold);border-color:var(--gold)}
+  #info canvas{display:block;width:100%;margin-top:3px}
+  #info .cap{font-size:8.5px;letter-spacing:.22em;color:var(--dimmer);margin-top:9px}
+  #info hr{border:0;border-top:1px solid var(--line);margin:13px 0 0}
+  .meter{display:flex;align-items:center;gap:8px;margin-top:6px}
+  .meter .lbl{font-size:8.5px;letter-spacing:.14em;color:var(--dimmer);width:78px}
+  .meter .bar{flex:1;height:2px;background:rgba(255,255,255,.12);position:relative;overflow:hidden}
   .meter .bar i{position:absolute;inset:0 auto 0 0;width:0%;background:var(--gold);
                 box-shadow:0 0 10px var(--gold);transition:width .06s linear}
+  #pal{display:flex;gap:0;margin-top:6px;border-radius:5px;overflow:hidden;height:30px}
+  #pal div{flex:1;position:relative}
+  #pal div b{
+    position:absolute;left:0;right:0;bottom:3px;text-align:center;font-size:9.5px;font-weight:400;
+    letter-spacing:.04em
+  }
+  /* シネマモード：UI を完全に隠す */
+  body.cinema .hud,body.cinema #info{opacity:0!important;pointer-events:none}
 
   /* ---------- 下部コントロール ---------- */
   #bottom{left:0;right:0;bottom:0;padding:18px 26px 22px;
@@ -173,12 +205,30 @@
   </div>
 </header>
 
-<div id="meters" class="hud">
+<aside id="info" class="hud">
+  <div class="row">
+    <div class="cell"><span class="k">KEY</span><span class="v" id="i-key">—</span></div>
+    <div class="cell"><span class="k">TEMPO</span><span class="v" id="i-bpm">—<small>BPM</small></span></div>
+  </div>
+  <span class="k">CHORD</span>
+  <div id="chord">—</div>
+  <div id="prog"></div>
+  <div class="cap">コード進行</div>
+  <hr>
+  <canvas id="c-chroma" width="416" height="84"></canvas>
+  <div class="cap">クロマ ─ 12 音のエネルギー</div>
+  <canvas id="c-spec" width="416" height="96"></canvas>
+  <div class="cap">スペクトル</div>
+  <canvas id="c-wave" width="416" height="56"></canvas>
+  <div class="cap">波形</div>
+  <hr>
   <div class="meter"><div class="lbl">低音 BASS</div><div class="bar"><i id="m-bass"></i></div></div>
   <div class="meter"><div class="lbl">中音域 MID</div><div class="bar"><i id="m-mid"></i></div></div>
   <div class="meter"><div class="lbl">高音域 HIGH</div><div class="bar"><i id="m-high"></i></div></div>
   <div class="meter"><div class="lbl">エネルギー</div><div class="bar"><i id="m-energy"></i></div></div>
-</div>
+  <div id="pal"></div>
+  <div class="cap">シーンの配色</div>
+</aside>
 
 <footer id="bottom" class="hud">
   <div id="scenes"></div>
@@ -194,7 +244,9 @@
     <div class="knob"><span>音量</span><input type="range" id="vol" min="0" max="100" value="85"></div>
     <div class="knob"><span>感度</span><input type="range" id="gain" min="40" max="220" value="100"></div>
     <div class="knob"><span>輝き</span><input type="range" id="bloom" min="0" max="150" value="85"></div>
+    <div class="knob"><span>フィルム</span><input type="range" id="film" min="0" max="130" value="70"></div>
     <button class="toggle" id="auto">自動切替</button>
+    <button class="toggle on" id="infobtn">情報</button>
     <button class="toggle" id="openfile">音源を開く</button>
     <button class="toggle" id="fs">全画面</button>
   </div>
@@ -215,7 +267,7 @@
       <button class="btn" id="demo">デモ音源で見る</button>
       <button class="btn" id="mic">マイク入力</button>
     </div>
-    <div class="note">スペース = 再生/停止 &nbsp;・&nbsp; 1〜6 = シーン切替 &nbsp;・&nbsp; F = 全画面 &nbsp;・&nbsp; H = UI 表示切替</div>
+    <div class="note">スペース = 再生/停止 &nbsp;・&nbsp; 1〜6 = シーン切替 &nbsp;・&nbsp; F = 全画面 &nbsp;・&nbsp; I = 情報パネル &nbsp;・&nbsp; H = UI 表示切替</div>
   </div>
 </div>
 
@@ -387,6 +439,9 @@ class AudioEngine {
     this._sinceBeat = 1;
     this._energySlow = 0;
     this._energyPeak = 0.05;
+    this._mu = 0.35;
+    this._sigma = 0.12;
+    this.music = new MusicAnalyzer();
     this._t0 = performance.now() / 1000;
     this._last = this._t0;
   }
@@ -598,18 +653,39 @@ class AudioEngine {
     }
 
     /* --- 楽曲の起伏（静けさ→ビルドアップ→サビ→余韻）
-       単純な移動平均だと拍の谷に引っぱられて盛り上がりを取り逃すため、
-       立ち上がりは速く・戻りはゆっくりの包絡線で「いま盛り上がっているか」を捉える --- */
+       市販曲は音圧が詰めてあり、ピーク比では常に最大値へ張り付いてしまう。
+       そこで直近 20 秒ほどの分布のどこにいるかで測る。均一に大きい曲は
+       真ん中に落ち着き、本当に持ち上がった箇所だけがサビとして出る。 --- */
     this._energySlow = a.level > this._energySlow
       ? approach(this._energySlow, a.level, 4.2, dt)
       : approach(this._energySlow, a.level, 0.30, dt);
-    a.intensity = approach(a.intensity, clamp(this._energySlow * 0.85 + a.level * 0.25, 0, 1), 2.0, dt);
+    const env = this._energySlow;
+    /* 高音の量もサビの手がかりにする（シンバルや上物が増えるため） */
+    const bright = clamp((a.high + a.air + a.highMid) / 3, 0, 1);
+    const feat = env * 0.72 + bright * 0.28;
+
+    this._mu = approach(this._mu, feat, 0.05, dt);                       // 約 20 秒
+    this._sigma = approach(this._sigma, Math.abs(feat - this._mu), 0.05, dt);
+    const spread = Math.max(this._sigma, 0.035);
+    const z = (feat - this._mu) / (2 * spread);
+    const rel = 0.5 + 0.5 * Math.tanh(z * 1.15);
+    /* 曲全体が静かなときまで中央に寄せないよう、絶対値も少し混ぜる */
+    const target = clamp(rel * 0.78 + feat * 0.22, 0, 1);
+    a.intensity = approach(a.intensity, target, 1.5, dt);
     const I = a.intensity;
     a.phase = I;
-    a.phaseName = !a.active ? '静けさ'
-                : I < 0.28 ? '静けさ'
-                : I < 0.52 ? 'ビルドアップ'
-                : I < 0.78 ? 'サビ' : 'クライマックス';
+    /* ラベルはヒステリシス付きで切り替え、境目でのちらつきを防ぐ */
+    const bands = [[0.30, '静けさ'], [0.55, 'ビルドアップ'], [0.80, 'サビ'], [Infinity, 'クライマックス']];
+    let idx = bands.findIndex(b => I < b[0]);
+    if (!a.active) idx = 0;
+    if (this._phaseIdx === undefined) this._phaseIdx = idx;
+    if (idx > this._phaseIdx && I > bands[this._phaseIdx][0] + 0.04) this._phaseIdx = idx;
+    else if (idx < this._phaseIdx && I < bands[idx][0] - 0.04) this._phaseIdx = idx;
+    a.phaseName = bands[this._phaseIdx][1];
+
+    /* --- キー / コード / テンポ --- */
+    this.music.update(this.freq, binHz, flux, dt);
+    a.music = this.music;
     return a;
   }
 
@@ -745,6 +821,184 @@ class DemoTrack {
 }
 
 /* ----------------------------------------------------------------------
+   1c. 楽曲解析 — キー / コード / テンポ
+       クロマ（12 音のエネルギー分布）を軸に、コード進行とキーを推定する。
+   ---------------------------------------------------------------------- */
+const PITCH_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+/* コード型。上から順に優先され、同点なら単純な三和音が選ばれる */
+const CHORD_TYPES = [
+  { suffix: '',     tones: [0, 4, 7]      },
+  { suffix: 'm',    tones: [0, 3, 7]      },
+  { suffix: 'sus4', tones: [0, 5, 7]      },
+  { suffix: '7',    tones: [0, 4, 7, 10]  },
+  { suffix: 'm7',   tones: [0, 3, 7, 10]  },
+  { suffix: 'maj7', tones: [0, 4, 7, 11]  },
+  { suffix: 'dim',  tones: [0, 3, 6]      },
+  { suffix: 'aug',  tones: [0, 4, 8]      }
+];
+
+/* Krumhansl-Schmuckler のキープロファイル */
+const KEY_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+const KEY_MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+
+class MusicAnalyzer {
+  constructor() {
+    this.chroma = new Float32Array(12);      // 平滑化後
+    this._raw = new Float32Array(12);
+    this._long = new Float32Array(12);       // キー推定用の長期平均
+    this.chord = '—';
+    this.chordRoot = -1;
+    this.chordConf = 0;
+    this.progression = [];                   // 直近のコード進行
+    this.key = '—';
+    this.keyRoot = -1;
+    this.keyMinor = false;
+    this.bpm = 0;
+    this._cand = ''; this._candN = 0;
+
+    /* テンポ推定：20ms ごとにオンセット強度を貯め、自己相関で周期を探す */
+    this._ob = new Float32Array(512);
+    this._obIdx = 0; this._obAcc = 0; this._obT = 0;
+    this._bpmClock = 0;
+  }
+
+  /** freq: 0-255 のスペクトル, binHz: ビンあたりの周波数 */
+  update(freq, binHz, flux, dt) {
+    /* --- クロマ --- */
+    const raw = this._raw;
+    raw.fill(0);
+    const lo = Math.max(1, Math.floor(70 / binHz));
+    const hi = Math.min(freq.length, Math.ceil(2200 / binHz));
+    let total = 0;
+    for (let i = lo; i < hi; i++) {
+      const m = freq[i] / 255;
+      if (m < 0.10) continue;
+      const f = i * binHz;
+      const midi = 69 + 12 * Math.log2(f / 440);
+      const pc = ((Math.round(midi) % 12) + 12) % 12;
+      const e = m * m;
+      raw[pc] += e;
+      total += e;
+    }
+    if (total > 0.0001) {
+      let mx = 0;
+      for (let i = 0; i < 12; i++) if (raw[i] > mx) mx = raw[i];
+      if (mx > 0) for (let i = 0; i < 12; i++) raw[i] /= mx;
+      for (let i = 0; i < 12; i++) {
+        this.chroma[i] = approach(this.chroma[i], raw[i], 7, dt);
+        this._long[i] = approach(this._long[i], raw[i], 0.06, dt);   // 約 16 秒
+      }
+      this._matchChord();
+      this._matchKey();
+    } else {
+      for (let i = 0; i < 12; i++) this.chroma[i] = approach(this.chroma[i], 0, 3, dt);
+    }
+
+    /* --- テンポ --- */
+    this._obAcc += flux;
+    this._obT += dt;
+    while (this._obT >= 0.02) {
+      this._ob[this._obIdx] = this._obAcc;
+      this._obIdx = (this._obIdx + 1) % this._ob.length;
+      this._obAcc = 0;
+      this._obT -= 0.02;
+    }
+    this._bpmClock += dt;
+    if (this._bpmClock > 1) { this._bpmClock = 0; this._estimateTempo(); }
+  }
+
+  _matchChord() {
+    const c = this.chroma;
+    let best = null, bestScore = -1e9;
+    for (let root = 0; root < 12; root++) {
+      for (let ti = 0; ti < CHORD_TYPES.length; ti++) {
+        const T = CHORD_TYPES[ti];
+        let inSum = 0, outSum = 0;
+        for (let pc = 0; pc < 12; pc++) {
+          const rel = (pc - root + 12) % 12;
+          if (T.tones.indexOf(rel) >= 0) inSum += c[pc];
+          else outSum += c[pc];
+        }
+        // 構成音に寄っているほど高く、余計な音が鳴っていると下がる
+        const score = inSum / T.tones.length - 0.45 * (outSum / (12 - T.tones.length))
+                    - ti * 0.013;   // 単純な和音を優先し、まれな型は選ばれにくくする
+        if (score > bestScore) { bestScore = score; best = { root, T }; }
+      }
+    }
+    if (!best || bestScore < 0.17) { this.chordConf = 0; return; }
+    this.chordConf = clamp(bestScore * 2.2, 0, 1);
+    const name = PITCH_NAMES[best.root] + best.T.suffix;
+    /* ちらつき防止：同じ候補が続いたときだけ確定させる */
+    if (name === this.chord) { this._cand = ''; this._candN = 0; return; }
+    if (name === this._cand) this._candN++;
+    else { this._cand = name; this._candN = 1; }
+    if (this._candN >= 3) {
+      this.chord = name;
+      this.chordRoot = best.root;
+      this.progression.push(name);
+      if (this.progression.length > 8) this.progression.shift();
+      this._cand = ''; this._candN = 0;
+    }
+  }
+
+  _matchKey() {
+    const L = this._long;
+    let mean = 0;
+    for (let i = 0; i < 12; i++) mean += L[i];
+    mean /= 12;
+    if (mean < 0.02) return;
+    let bestR = -1e9, bestRoot = 0, bestMinor = false;
+    for (let root = 0; root < 12; root++) {
+      for (let m = 0; m < 2; m++) {
+        const prof = m ? KEY_MINOR : KEY_MAJOR;
+        let num = 0, d1 = 0, d2 = 0, pm = 0;
+        for (let i = 0; i < 12; i++) pm += prof[i];
+        pm /= 12;
+        for (let i = 0; i < 12; i++) {
+          const x = L[(root + i) % 12] - mean;
+          const y = prof[i] - pm;
+          num += x * y; d1 += x * x; d2 += y * y;
+        }
+        const r = num / (Math.sqrt(d1 * d2) + 1e-9);
+        if (r > bestR) { bestR = r; bestRoot = root; bestMinor = !!m; }
+      }
+    }
+    this.keyRoot = bestRoot;
+    this.keyMinor = bestMinor;
+    this.key = PITCH_NAMES[bestRoot] + (bestMinor ? 'm' : '');
+  }
+
+  _estimateTempo() {
+    const ob = this._ob, N = ob.length;
+    let mean = 0;
+    for (let i = 0; i < N; i++) mean += ob[i];
+    mean /= N;
+    if (mean < 1e-6) return;
+    /* lag 18..100 バケット = 0.36〜2.0 秒 = 30〜167 BPM */
+    let bestLag = 0, bestVal = 0;
+    const vals = [];
+    for (let lag = 18; lag < 100; lag++) {
+      let s = 0;
+      for (let i = 0; i < N - lag; i++) s += (ob[i] - mean) * (ob[i + lag] - mean);
+      s /= (N - lag);
+      vals[lag] = s;
+      if (s > bestVal) { bestVal = s; bestLag = lag; }
+    }
+    if (!bestLag) return;
+    /* 放物線補間でバケットより細かく求める */
+    const y0 = vals[bestLag - 1] || 0, y1 = vals[bestLag], y2 = vals[bestLag + 1] || 0;
+    const denom = (y0 - 2 * y1 + y2);
+    const shift = denom !== 0 ? 0.5 * (y0 - y2) / denom : 0;
+    let period = (bestLag + clamp(shift, -1, 1)) * 0.02;
+    let bpm = 60 / period;
+    while (bpm < 70) bpm *= 2;
+    while (bpm > 180) bpm /= 2;
+    this.bpm = this.bpm ? this.bpm * 0.86 + bpm * 0.14 : bpm;
+  }
+}
+
+/* ----------------------------------------------------------------------
    2. レンダラ
       シーンは自前のバッファに描き、最後にブルーム（後光）を合成する。
       シーン切替はバッファ 2 枚のクロスフェードで行う。
@@ -755,9 +1009,13 @@ class Renderer {
     this.ctx = canvas.getContext('2d', { alpha: false });
     this.bufs = [this._mk(), this._mk()];
     this.small = this._mk();
+    this.tints = [this._mk(), this._mk(), this._mk()];   // 色収差・光条用の着色コピー
     this.dpr = 1;
     this.quality = 1;
     this.bloom = 0.85;
+    this.film = 0.7;          // フィルム風の後処理の強さ
+    this.grainTiles = [];
+    this._gi = 0;
     this.scenes = [];
     this.cur = 0;
     this.prev = -1;
@@ -772,6 +1030,112 @@ class Renderer {
   }
   add(scene) { this.scenes.push(scene); return scene; }
 
+  /** フィルム風後処理の素材（周辺減光とフィルムグレイン）を用意する */
+  _buildFilm() {
+    const { W, H } = this;
+    const g = this.ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.28,
+                                            W / 2, H / 2, Math.max(W, H) * 0.72);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(0.62, 'rgba(0,0,0,0.16)');
+    g.addColorStop(1, 'rgba(0,0,0,0.55)');
+    this.vignette = g;
+    if (this.grainTiles.length) return;
+    /* 中間灰を基準にした粒子。overlay 合成なので 128 が「変化なし」になる */
+    for (let k = 0; k < 3; k++) {
+      const S = 256;
+      const c = document.createElement('canvas');
+      c.width = c.height = S;
+      const x = c.getContext('2d');
+      const img = x.createImageData(S, S);
+      const d = img.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const n = 128 + (Math.random() - 0.5) * 150;
+        d[i] = d[i + 1] = d[i + 2] = n;
+        d[i + 3] = 255;
+      }
+      x.putImageData(img, 0, 0);
+      this.grainTiles.push(c);
+    }
+  }
+
+  /** 小バッファを単色で着色したコピーを返す（色収差・光条用） */
+  _tinted(slot, r, g, b) {
+    const t = this.tints[slot];
+    const x = t.x;
+    x.setTransform(1, 0, 0, 1, 0, 0);
+    x.globalCompositeOperation = 'source-over';
+    x.globalAlpha = 1;
+    x.clearRect(0, 0, this.sW, this.sH);
+    x.drawImage(this.small.c, 0, 0);
+    x.globalCompositeOperation = 'multiply';
+    x.fillStyle = `rgb(${r},${g},${b})`;
+    x.fillRect(0, 0, this.sW, this.sH);
+    // 元の輝度が無いところに色が乗らないよう、アルファで型抜きする
+    x.globalCompositeOperation = 'destination-in';
+    x.drawImage(this.small.c, 0, 0);
+    x.globalCompositeOperation = 'source-over';
+    return t.c;
+  }
+
+  /** レンズと film の質感を与える後処理 */
+  _post(d, a) {
+    const { W, H } = this;
+    const f = this.film;
+    if (f <= 0.01) return;
+    const scene = this.scenes[this.cur];
+
+    /* --- 光芒：光源を中心に明部を放射状へ引き伸ばす --- */
+    const lp = scene.light ? scene.light(W, H, a) : null;
+    if (lp) {
+      d.globalCompositeOperation = 'lighter';
+      for (let i = 1; i <= 5; i++) {
+        const s = 1 + i * 0.05 * (0.7 + a.intensity * 0.9);
+        d.globalAlpha = 0.05 * f * (1 - i / 6.5);
+        d.drawImage(this.small.c, lp.x * (1 - s), lp.y * (1 - s), W * s, H * s);
+      }
+    }
+
+    /* --- アナモルフィックな横方向の光条 --- */
+    const streak = this._tinted(0, 120, 175, 255);
+    d.globalCompositeOperation = 'lighter';
+    d.globalAlpha = 0.13 * f;
+    d.drawImage(streak, -W * 1.5, 0, W * 4, H);
+    d.globalAlpha = 0.07 * f;
+    d.drawImage(streak, -W * 4.5, 0, W * 10, H);
+
+    /* --- 色収差：明るい輪郭に赤と青のわずかなズレを出す --- */
+    const k = 1 + 0.0055 * f;
+    const rC = this._tinted(1, 255, 70, 70);
+    const bC = this._tinted(2, 70, 130, 255);
+    d.globalAlpha = 0.30 * f;
+    d.drawImage(rC, W * (1 - k) / 2, H * (1 - k) / 2, W * k, H * k);
+    const k2 = 2 - k;
+    d.drawImage(bC, W * (1 - k2) / 2, H * (1 - k2) / 2, W * k2, H * k2);
+
+    /* --- 黒の浮き（フィルムのハイライトかぶり） --- */
+    d.globalAlpha = 1;
+    d.fillStyle = `rgba(22,28,46,${0.05 * f})`;
+    d.fillRect(0, 0, W, H);
+
+    /* --- 周辺減光 --- */
+    d.globalCompositeOperation = 'source-over';
+    d.globalAlpha = clamp(f, 0, 1);
+    d.fillStyle = this.vignette;
+    d.fillRect(0, 0, W, H);
+
+    /* --- フィルムグレイン --- */
+    const tile = this.grainTiles[(this._gi++) % this.grainTiles.length];
+    if (tile) {
+      d.globalCompositeOperation = 'overlay';
+      d.globalAlpha = 0.05 + 0.085 * f;
+      const ox = -Math.random() * tile.width, oy = -Math.random() * tile.height;
+      for (let y = oy; y < H; y += tile.height)
+        for (let x = ox; x < W; x += tile.width) d.drawImage(tile, x, y);
+    }
+    d.globalCompositeOperation = 'source-over';
+    d.globalAlpha = 1;
+  }
+
   resize() {
     const w = window.innerWidth, h = window.innerHeight;
     const dpr = Math.min(window.devicePixelRatio || 1, 1.75) * this.quality;
@@ -784,7 +1148,9 @@ class Renderer {
     this.sW = Math.max(2, Math.round(this.W / 4));
     this.sH = Math.max(2, Math.round(this.H / 4));
     this.small.c.width = this.sW; this.small.c.height = this.sH;
+    for (const t of this.tints) { t.c.width = this.sW; t.c.height = this.sH; }
     this.scale = dpr;
+    this._buildFilm();
     for (const s of this.scenes) { s.resize(this.W, this.H, dpr); s.dirty = true; }
   }
 
@@ -851,6 +1217,8 @@ class Renderer {
       d.globalAlpha = 1;
     }
 
+    this._post(d, a);
+
     /* --- 重い環境では自動的に解像度を落とす --- */
     this._fpsAcc += a.dt; this._fpsN++;
     if (this._fpsAcc > 2.5) {
@@ -867,7 +1235,13 @@ class Renderer {
    3. シーン基底クラス
    ---------------------------------------------------------------------- */
 class Scene {
-  constructor(name, en) { this.name = name; this.en = en; this.w = 0; this.h = 0; this.s = 1; }
+  constructor(name, en) {
+    this.name = name; this.en = en; this.w = 0; this.h = 0; this.s = 1;
+    /* 情報パネルに出す配色。シーンごとの世界観を色で示す */
+    this.palette = [];
+  }
+  /** 光芒の中心。null なら光芒を出さない */
+  light() { return null; }
   resize(w, h, s) { this.w = w; this.h = h; this.s = s; this.build(); }
   build() {}
   enter() {}
@@ -909,6 +1283,7 @@ class Scene {
 class RipplesScene extends Scene {
   constructor() {
     super('光の波紋', 'Ripples');
+    this.palette = [['#ffeccb','白光'], ['#ffc182','琥珀'], ['#2a1f2c','宵'], ['#070a16','深藍'], ['#03040a','夜']];
     this.rings = [];
     this.sparks = [];
     this.beam = 0;
@@ -920,6 +1295,7 @@ class RipplesScene extends Scene {
     this.sky = null;
   }
   enter() { this.rings.length = 0; this.sparks.length = 0; }
+  light(w, h) { return { x: this.cx, y: this.horizon }; }
 
   draw(ctx, a, w, h, s) {
     const t = a.time;
@@ -1075,6 +1451,7 @@ class RipplesScene extends Scene {
 class AuroraScene extends Scene {
   constructor() {
     super('オーロラ・ドリフト', 'Aurora');
+    this.palette = [['#4be0a0','翠'], ['#5ec8ff','空'], ['#a479ff','菫'], ['#0a1430','群青'], ['#02040f','山影']];
     this.curtains = [];
     this.stars = [];
     this.flash = 0;
@@ -1297,6 +1674,7 @@ class AuroraScene extends Scene {
 class WaterScene extends Scene {
   constructor() {
     super('水の流れ', 'Water');
+    this.palette = [['#d7f6ff','飛沫'], ['#78cdff','水浅葱'], ['#408eee','藍'], ['#07142a','深水'], ['#01030a','淵']];
     this.p = [];
     this.drops = [];
     this.bubbles = [];
@@ -1460,6 +1838,7 @@ class WaterScene extends Scene {
 class TreeScene extends Scene {
   constructor() {
     super('光の樹', 'Tree');
+    this.palette = [['#fffcf2','芯'], ['#ffe2aa','灯'], ['#ffa846','琥珀'], ['#12080a','土'], ['#04030a','闇']];
     this.nodes = [];
     this.motes = [];
     this.growth = 0;
@@ -1507,6 +1886,7 @@ class TreeScene extends Scene {
     for (let i = 0; i < 120; i++) this.stars.push({ x: r2() * w, y: r2() * h * 0.8, r: 0.4 + r2() * 1.3, ph: r2() * TAU });
   }
   enter() { this.growth = 0; this.motes.length = 0; }
+  light() { return { x: this.baseX, y: this.baseY }; }
 
   draw(ctx, a, w, h, s) {
     const t = a.time;
@@ -1645,6 +2025,7 @@ class TreeScene extends Scene {
 class StardustScene extends Scene {
   constructor() {
     super('星屑の軌跡', 'Stardust');
+    this.palette = [['#fffdf5','核'], ['#ffce8c','金'], ['#96beff','星'], ['#be96ff','星雲'], ['#010106','虚空']];
     this.p = [];
     this.shoot = [];
     this.spin = 0;
@@ -1676,6 +2057,7 @@ class StardustScene extends Scene {
     this.cx = w * 0.5; this.cy = h * 0.5;
   }
   enter() { this.shoot.length = 0; this.clearTrail(); }
+  light() { return { x: this.cx, y: this.cy }; }
 
   draw(ctx, a, w, h, s) {
     const t = a.time;
@@ -1791,6 +2173,7 @@ class StardustScene extends Scene {
 class FlowerScene extends Scene {
   constructor() {
     super('花の呼吸', 'Bloom');
+    this.palette = [['#fff6e0','蕊'], ['#ff8fd0','桃'], ['#c86bff','藤'], ['#150a18','夜'], ['#030106','闇']];
     this.open = 0.25;
     this.petals = [];
     this.fallen = [];
@@ -1810,7 +2193,7 @@ class FlowerScene extends Scene {
     path.bezierCurveTo(W * 0.06, H * 0.72, W * 0.10, H * 0.24, W / 2, 6);
     path.bezierCurveTo(W * 0.90, H * 0.24, W * 0.94, H * 0.72, W / 2, H - 4);
     const g = x.createRadialGradient(W / 2, H * 0.86, 4, W / 2, H * 0.72, H * 0.86);
-    g.addColorStop(0.00, hsl(hue + 14, 100, 88, 0.95));
+    g.addColorStop(0.00, hsl(hue + 14, 100, 88, 0.55));
     g.addColorStop(0.18, hsl(hue, 92, 72, 0.62));
     g.addColorStop(0.55, hsl(hue - 8, 88, 60, 0.30));
     g.addColorStop(1.00, hsl(hue - 18, 84, 56, 0.02));
@@ -1860,6 +2243,7 @@ class FlowerScene extends Scene {
     }
   }
   enter() { this.fallen.length = 0; this.pollen.length = 0; this.petals.forEach(p => p.gone = 0); }
+  light() { return { x: this.cx, y: this.cy }; }
 
   draw(ctx, a, w, h, s) {
     const t = a.time;
@@ -1914,9 +2298,9 @@ class FlowerScene extends Scene {
     /* --- 花芯 --- */
     const core = glow(255, 226, 150);
     const coreR = R * (0.05 + a.bass * 0.075 + a.sub * 0.04);
-    blob(ctx, core, cx, cy, coreR * 4.6, 0.10 + a.bass * 0.17);
-    blob(ctx, core, cx, cy, coreR * 1.6, 0.26 + a.level * 0.24);
-    blob(ctx, glow(255, 250, 235), cx, cy, coreR * 0.5, 0.55);
+    blob(ctx, core, cx, cy, coreR * 4.6, 0.07 + a.bass * 0.12);
+    blob(ctx, core, cx, cy, coreR * 1.6, 0.17 + a.level * 0.16);
+    blob(ctx, glow(255, 250, 235), cx, cy, coreR * 0.5, 0.38);
     /* 雄しべ */
     const stamens = 26;
     for (let i = 0; i < stamens; i++) {
@@ -2138,19 +2522,50 @@ $('vol').addEventListener('input', e => audio.setVolume(e.target.value / 100));
 $('gain').addEventListener('input', e => { audio.sensitivity = e.target.value / 100; });
 $('bloom').addEventListener('input', e => { renderer.bloom = e.target.value / 100; });
 
+$('film').addEventListener('input', e => { renderer.film = e.target.value / 100; });
+
+/* 自動切替：間隔を選べるようにする（押すたびに 15 → 30 → 60 秒 → オフ） */
+const AUTO_STEPS = [0, 15, 30, 60];
 const autoBtn = $('auto');
-let autoOn = false;
+let autoStep = 0, autoOn = false, autoSecs = 30;
 autoBtn.addEventListener('click', () => {
-  autoOn = !autoOn;
+  autoStep = (autoStep + 1) % AUTO_STEPS.length;
+  autoSecs = AUTO_STEPS[autoStep];
+  autoOn = autoSecs > 0;
   autoBtn.classList.toggle('on', autoOn);
+  autoBtn.textContent = autoOn ? `自動切替 ${autoSecs}秒` : '自動切替';
   autoTimer = 0;
-  toast(autoOn ? 'シーンを自動で切り替えます' : '自動切替をオフにしました', 1800);
+  toast(autoOn ? `${autoSecs} 秒ごとに、曲の区切りでシーンを切り替えます` : '自動切替をオフにしました', 2200);
 });
 
+/* 情報パネル */
+const infoBtn = $('infobtn');
+let infoOn = true;
+function setInfo(on) {
+  infoOn = on;
+  infoBtn.classList.toggle('on', on);
+  document.body.classList.toggle('noinfo', !on);
+}
+infoBtn.addEventListener('click', () => setInfo(!infoOn));
+
+/* 全画面。埋め込み表示では許可されないことがあるので、その場合は UI を隠す */
+let cinema = false;
 $('fs').addEventListener('click', toggleFs);
-function toggleFs() {
-  if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
-  else document.exitFullscreen?.();
+async function toggleFs() {
+  try {
+    if (document.fullscreenElement) { await document.exitFullscreen(); return; }
+    const el = document.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!req) throw new Error('このブラウザは全画面に対応していません');
+    await req.call(el);
+    if (cinema) { cinema = false; document.body.classList.remove('cinema'); }
+  } catch (e) {
+    cinema = !cinema;
+    document.body.classList.toggle('cinema', cinema);
+    toast(cinema
+      ? 'このページは埋め込み表示のため全画面にできません。UI を隠しました（別タブで開くと全画面にできます）'
+      : 'UI を戻しました', 6000);
+  }
 }
 
 /* --- キーボード --- */
@@ -2165,8 +2580,10 @@ window.addEventListener('keydown', e => {
   } else if (e.key === 'f' || e.key === 'F') {
     toggleFs();
   } else if (e.key === 'h' || e.key === 'H') {
-    document.body.classList.toggle('idle');
-    idleAt = Infinity;
+    cinema = !cinema;
+    document.body.classList.toggle('cinema', cinema);
+  } else if (e.key === 'i' || e.key === 'I') {
+    setInfo(!infoOn);
   } else if (e.key === 'ArrowRight' && audio.mode === 'file') {
     audio.el.currentTime = Math.min(audio.el.duration || 0, audio.el.currentTime + 5);
   } else if (e.key === 'ArrowLeft' && audio.mode === 'file') {
@@ -2189,6 +2606,116 @@ window.addEventListener('resize', () => {
   rsTimer = setTimeout(() => renderer.resize(), 120);
 });
 
+/* ----------------------------------------------------------------------
+   情報パネルの描画
+   ---------------------------------------------------------------------- */
+const NOTE_LABELS = ['C', '', 'D', '', 'E', 'F', '', 'G', '', 'A', '', 'B'];
+const cvs = id => { const c = $(id); return { c, x: c.getContext('2d') }; };
+const gChroma = cvs('c-chroma'), gSpec = cvs('c-spec'), gWave = cvs('c-wave');
+let lastChord = '', lastPalScene = -1;
+
+function drawChroma(m) {
+  const { c, x } = gChroma, W = c.width, H = c.height;
+  x.clearRect(0, 0, W, H);
+  const bw = W / 12;
+  for (let i = 0; i < 12; i++) {
+    const v = clamp(m ? m.chroma[i] : 0, 0, 1);
+    const h = (H - 16) * v;
+    const inChord = m && m.chordRoot >= 0 && chordHas(m, i);
+    x.fillStyle = inChord ? 'rgba(255,207,138,.92)' : 'rgba(255,255,255,.22)';
+    x.fillRect(i * bw + 2, H - 14 - h, bw - 4, h);
+    if (NOTE_LABELS[i]) {
+      x.fillStyle = 'rgba(255,255,255,.4)';
+      x.font = '15px sans-serif';
+      x.textAlign = 'center';
+      x.fillText(NOTE_LABELS[i], i * bw + bw / 2, H - 1);
+    }
+  }
+}
+/** そのピッチクラスが、いま鳴っているコードの構成音か */
+function chordHas(m, pc) {
+  const type = CHORD_TYPES.find(t => m.chord === PITCH_NAMES[m.chordRoot] + t.suffix);
+  if (!type) return false;
+  return type.tones.indexOf((pc - m.chordRoot + 12) % 12) >= 0;
+}
+
+function drawSpectrum(a) {
+  const { c, x } = gSpec, W = c.width, H = c.height;
+  x.clearRect(0, 0, W, H);
+  const sp = a.spectrum;
+  if (!sp) return;
+  const bars = 56, nyq = sp.length;
+  x.fillStyle = 'rgba(255,207,138,.75)';
+  for (let i = 0; i < bars; i++) {
+    /* 対数配置にして低音側をつぶさない */
+    const f0 = Math.pow(nyq, i / bars), f1 = Math.pow(nyq, (i + 1) / bars);
+    let sum = 0, n = 0;
+    for (let k = Math.floor(f0); k < Math.max(Math.floor(f0) + 1, f1); k++) { sum += sp[k] || 0; n++; }
+    const v = (sum / Math.max(1, n)) / 255;
+    const h = Math.pow(v, 0.85) * H;
+    x.fillRect(i * (W / bars), H - h, W / bars - 1.5, h);
+  }
+}
+
+function drawWave(a) {
+  const { c, x } = gWave, W = c.width, H = c.height;
+  x.clearRect(0, 0, W, H);
+  const wv = a.wave;
+  if (!wv) return;
+  x.strokeStyle = 'rgba(255,225,190,.85)';
+  x.lineWidth = 2;
+  x.beginPath();
+  const step = Math.max(1, Math.floor(wv.length / W));
+  for (let i = 0, px = 0; i < wv.length; i += step, px++) {
+    const y = H / 2 - wv[i] * H * 0.9;
+    i === 0 ? x.moveTo(px, y) : x.lineTo(px, y);
+  }
+  x.stroke();
+}
+
+function drawPalette(scene) {
+  const el = $('pal');
+  el.innerHTML = '';
+  for (const [hex, name] of (scene.palette || [])) {
+    const d = document.createElement('div');
+    d.style.background = hex;
+    /* 明るい色の上では文字を黒にしないと読めない */
+    const r = parseInt(hex.substr(1, 2), 16), g = parseInt(hex.substr(3, 2), 16), b = parseInt(hex.substr(5, 2), 16);
+    const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    const dark = lum > 0.55;
+    d.innerHTML = `<b style="color:${dark ? 'rgba(0,0,0,.78)' : 'rgba(255,255,255,.88)'};` +
+                  `text-shadow:none">${name}</b>`;
+    d.title = `${name} ${hex}`;
+    el.appendChild(d);
+  }
+}
+
+function updateInfo(a) {
+  const m = a.music;
+  if (!m) return;
+  $('i-key').textContent = m.key === '—' ? '—' : m.key + (m.keyMinor ? '' : '');
+  $('i-bpm').innerHTML = (m.bpm ? Math.round(m.bpm) : '—') + '<small>BPM</small>';
+  if (m.chord !== lastChord) {
+    lastChord = m.chord;
+    $('chord').textContent = m.chord;
+    const p = $('prog');
+    p.innerHTML = '';
+    m.progression.slice(-6).forEach((name, i, arr) => {
+      const s = document.createElement('span');
+      s.textContent = name;
+      if (i === arr.length - 1) s.className = 'now';
+      p.appendChild(s);
+    });
+  }
+  drawChroma(m);
+  drawSpectrum(a);
+  drawWave(a);
+  if (renderer.cur !== lastPalScene) {
+    lastPalScene = renderer.cur;
+    drawPalette(renderer.scenes[renderer.cur]);
+  }
+}
+
 /* --- メインループ --- */
 const bar = (id, v) => {
   const el = $(id);
@@ -2202,11 +2729,14 @@ function loop() {
   window.__audio = a;          // デバッグ・拡張用に解析結果を公開
   renderer.frame(a);
 
-  /* 自動シーン切替：区切りのよいところで移る */
+  /* 自動シーン切替：指定間隔を過ぎたら、次の拍に合わせて移る
+     （拍が来なければ 5 秒後に切り替える） */
   if (autoOn) {
     autoTimer += a.dt;
-    const ready = autoTimer > 26 && a.hit && a.beatStrength > 0.4;
-    if (ready || autoTimer > 48) selectScene((renderer.cur + 1) % renderer.scenes.length);
+    const due = autoTimer > autoSecs;
+    if ((due && a.hit && a.beatStrength > 0.3) || autoTimer > autoSecs + 5) {
+      selectScene((renderer.cur + 1) % renderer.scenes.length);
+    }
   }
 
   /* UI 更新は 20fps 程度で十分 */
@@ -2217,6 +2747,7 @@ function loop() {
     bar('m-mid', a.mid);
     bar('m-high', (a.high + a.air) * 0.6);
     bar('m-energy', a.intensity);
+    if (infoOn) updateInfo(a);
     const ph = $('phase');
     if (ph.textContent !== a.phaseName) ph.textContent = a.phaseName;
     ph.style.opacity = (0.45 + a.intensity * 0.55).toFixed(2);
@@ -2262,6 +2793,8 @@ function loop() {
 /* --- 起動 --- */
 renderer.resize();
 selectScene(0, true);
+drawPalette(renderer.scenes[0]);
+renderer.film = 0.70;
 audio.setVolume(0.85);
 loop();
 
