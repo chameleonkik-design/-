@@ -126,6 +126,19 @@
   .btn.primary:hover{filter:brightness(1.08)}
   .note{margin-top:26px;font-size:10px;color:var(--dimmer);letter-spacing:.1em;line-height:1.9}
 
+  /* 音が出せないときの復帰用バナー */
+  #audiohint{
+    position:fixed;left:50%;top:96px;transform:translateX(-50%) translateY(-8px);z-index:35;
+    display:none;align-items:center;gap:14px;cursor:pointer;text-align:left;
+    background:rgba(255,207,138,.1);border:1px solid rgba(255,207,138,.45);border-radius:12px;
+    padding:14px 22px;backdrop-filter:blur(10px);opacity:0;transition:.35s;
+    font-family:inherit;color:var(--ink)
+  }
+  #audiohint.show{display:flex;opacity:1;transform:translateX(-50%) translateY(0)}
+  #audiohint b{display:block;font-size:12.5px;letter-spacing:.1em;color:var(--gold);margin-bottom:4px}
+  #audiohint span{font-size:11px;color:var(--dim);line-height:1.7;letter-spacing:.06em}
+  #audiohint:hover{background:rgba(255,207,138,.16)}
+
   #toast{
     position:fixed;left:50%;bottom:120px;transform:translateX(-50%) translateY(10px);z-index:40;
     background:var(--glass);border:1px solid var(--line);border-radius:10px;padding:11px 20px;
@@ -205,6 +218,8 @@
     <div class="note">スペース = 再生/停止 &nbsp;・&nbsp; 1〜6 = シーン切替 &nbsp;・&nbsp; F = 全画面 &nbsp;・&nbsp; H = UI 表示切替</div>
   </div>
 </div>
+
+<button id="audiohint"><span><b>ここをクリックすると音が出ます</b>ブラウザが音の再生をまだ許可していません</span></button>
 
 <div id="toast"></div>
 <!-- accept を audio/* だけにすると、環境によって .mp3 が音声と判定されず
@@ -347,6 +362,9 @@ class AudioEngine {
     this.analyser = null;
     this.el = new Audio();
     this.el.preload = 'auto';
+    // DOM に属さない音声要素を再生できないブラウザがあるため、隠して差し込む
+    this.el.setAttribute('playsinline', '');
+    this.el.style.display = 'none';
     this.elSource = null;
     this.micStream = null;
     this.demo = null;
@@ -377,6 +395,7 @@ class AudioEngine {
     if (this.ctx) return this.ctx;
     const AC = window.AudioContext || window.webkitAudioContext;
     this.ctx = new AC();
+    if (this.el.parentNode !== document.body) document.body.appendChild(this.el);
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 4096;
     this.analyser.smoothingTimeConstant = 0.72;
@@ -395,7 +414,20 @@ class AudioEngine {
     return this.ctx;
   }
 
-  resume() { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); }
+  /** AudioContext を起こす。ブラウザはユーザー操作なしに音を出させないので、
+   *  クリックやキー操作のたびに呼んで「起きている」状態を保つ。
+   *  ファイル選択の change イベントは操作として扱われないため、
+   *  そこで初めて context を作ると suspended のまま復帰できない。 */
+  unlock() {
+    this._ensureCtx();
+    return this.resume();
+  }
+  resume() {
+    if (!this.ctx || this.ctx.state === 'running') return Promise.resolve();
+    return this.ctx.resume().catch(() => {});
+  }
+  /** 音が出せる状態か（出せない場合は UI で操作を促す） */
+  get blocked() { return !!this.ctx && this.ctx.state !== 'running'; }
 
   /* ---- 入力ソース切り替え ---- */
   /** 音源を読み込む。読み込みと再生を分けているので、
@@ -430,8 +462,8 @@ class AudioEngine {
     });
   }
   /** 読み込み済みの音源を再生する（ユーザー操作の直後に呼ぶ必要がある） */
-  play() {
-    this.resume();
+  async play() {
+    await this.resume();
     return this.el.play();
   }
 
@@ -1965,6 +1997,7 @@ class FlowerScene extends Scene {
 const $ = id => document.getElementById(id);
 const audio = new AudioEngine();
 const renderer = new Renderer($('view'));
+window.__engine = audio;      // 動作確認・拡張用
 
 [new RipplesScene(), new AuroraScene(), new WaterScene(),
  new TreeScene(), new StardustScene(), new FlowerScene()].forEach(s => renderer.add(s));
@@ -2050,6 +2083,20 @@ $('mic').addEventListener('click', async () => {
   } catch (e) {
     toast('マイクを利用できませんでした');
   }
+});
+
+/* --- 音の解禁 ---
+   ブラウザはユーザー操作なしに音を出させない。ファイル選択の change は
+   操作として数えられないため、実際の操作のたびに AudioContext を起こしておく。 */
+const unlock = () => { audio.unlock(); };
+['pointerdown', 'keydown', 'touchstart'].forEach(ev =>
+  window.addEventListener(ev, unlock, { capture: true, passive: true }));
+
+$('audiohint').addEventListener('click', async () => {
+  await audio.unlock();
+  if (audio.mode === 'file' && audio.el.paused) audio.play().catch(() => {});
+  if (audio.mode === 'demo' && !audio.demo.running) audio.demo.start();
+  refreshPlayIcon();
 });
 
 /* --- ドラッグ＆ドロップ --- */
@@ -2148,6 +2195,7 @@ const bar = (id, v) => {
   if (el) el.style.width = (clamp(v, 0, 1) * 100).toFixed(1) + '%';
 };
 let uiAcc = 0;
+let silentFor = 0;
 function loop() {
   requestAnimationFrame(loop);
   const a = audio.update();
@@ -2184,6 +2232,30 @@ function loop() {
       if (!seeking) $('seek').value = 0;
     }
     if (performance.now() > idleAt && audio.playing) document.body.classList.add('idle');
+
+    /* 音が出ない状態の検知。
+       AudioContext が止まっているか、再生中なのに信号がまったく来ない場合に、
+       原因と復帰方法を出す（黙って無反応にならないように）。 */
+    let head = '', body = '';
+    if (audio.mode !== 'none' && audio.blocked) {
+      head = 'ここをクリックすると音が出ます';
+      body = 'ブラウザが音の再生をまだ許可していません';
+    } else if (audio.mode === 'file' && !audio.el.paused) {
+      silentFor = a.rms > 0.0015 ? 0 : silentFor + 0.05;
+      if (silentFor > 2.5) {
+        head = '音が検出できません';
+        body = '無音の区間か、音量が 0 になっていないかご確認ください';
+      }
+    } else {
+      silentFor = 0;
+    }
+    const hint = $('audiohint');
+    if (head) {
+      hint.querySelector('span').innerHTML = `<b>${head}</b>${body}`;
+      hint.classList.add('show');
+    } else {
+      hint.classList.remove('show');
+    }
   }
 }
 
