@@ -38,49 +38,45 @@
   #phase{margin-top:6px;text-align:right;font-size:11px;letter-spacing:.3em;color:var(--gold);
          opacity:.9;transition:opacity .4s}
 
-  /* 楽曲情報パネル */
-  #info{
-    position:fixed;right:22px;top:50%;transform:translateY(-50%);z-index:10;width:236px;
-    display:flex;flex-direction:column;gap:0;
-    background:rgba(8,9,14,.42);border:1px solid var(--line);border-radius:14px;
-    padding:16px 16px 14px;backdrop-filter:blur(14px);
-    font-variant-numeric:tabular-nums
+  /* 常設の情報ストリップ ── 映像の邪魔をしないよう画面下端に薄く置く。
+     UI の自動フェード（.hud）には含めず、常に出したままにする。 */
+  #mini{
+    position:fixed;left:0;right:0;bottom:0;z-index:11;pointer-events:none;
+    padding:0 26px 9px;display:flex;flex-direction:column;gap:5px;
+    font-variant-numeric:tabular-nums;
+    -webkit-mask-image:linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent);
+            mask-image:linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent)
   }
-  body.noinfo #info{display:none}
-  #info .row{display:flex;gap:14px;align-items:baseline;margin-bottom:12px}
-  #info .cell{flex:1;min-width:0}
-  #info .k{display:block;font-size:8.5px;letter-spacing:.28em;color:var(--dimmer);margin-bottom:3px}
-  #info .v{font-size:15px;color:var(--ink);letter-spacing:.05em}
-  #info .v small{font-size:9px;color:var(--dimmer);letter-spacing:.16em;margin-left:3px}
-  #chord{
-    font-size:34px;line-height:1.05;color:var(--gold);letter-spacing:.02em;
-    text-shadow:0 0 26px rgba(255,207,138,.42);margin:2px 0 6px;min-height:36px
+  body.noinfo #mini{display:none}
+  #mini canvas{width:100%;height:44px;display:block;opacity:.62}
+  #mini .row{
+    display:flex;align-items:center;gap:11px;
+    font-size:9.5px;letter-spacing:.2em;color:rgba(243,239,232,.52)
   }
-  #prog{display:flex;gap:5px;flex-wrap:wrap;min-height:17px}
-  #prog span{
-    font-size:9.5px;letter-spacing:.06em;color:var(--dim);border:1px solid var(--line);
-    border-radius:4px;padding:2px 5px
+  #mini .row b{font-weight:400;color:rgba(255,207,138,.8)}
+  #mini .row i{width:1px;height:9px;background:rgba(255,255,255,.16);font-style:normal}
+  #mini .grow{flex:1}
+  #mini .bars{display:flex;align-items:center;gap:9px}
+  #mini .bars span{display:flex;align-items:center;gap:5px}
+  #mini .bars u{
+    display:block;width:34px;height:1.5px;background:rgba(255,255,255,.14);
+    position:relative;text-decoration:none;overflow:hidden
   }
-  #prog span.now{color:#120d06;background:var(--gold);border-color:var(--gold)}
-  #info canvas{display:block;width:100%;margin-top:3px}
-  #info .cap{font-size:8.5px;letter-spacing:.22em;color:var(--dimmer);margin-top:9px}
-  #info hr{border:0;border-top:1px solid var(--line);margin:13px 0 0}
-  .meter{display:flex;align-items:center;gap:8px;margin-top:6px}
-  .meter .lbl{font-size:8.5px;letter-spacing:.14em;color:var(--dimmer);width:78px}
-  .meter .bar{flex:1;height:2px;background:rgba(255,255,255,.12);position:relative;overflow:hidden}
-  .meter .bar i{position:absolute;inset:0 auto 0 0;width:0%;background:var(--gold);
-                box-shadow:0 0 10px var(--gold);transition:width .06s linear}
-  #pal{display:flex;gap:0;margin-top:6px;border-radius:5px;overflow:hidden;height:30px}
-  #pal div{flex:1;position:relative}
-  #pal div b{
-    position:absolute;left:0;right:0;bottom:3px;text-align:center;font-size:9.5px;font-weight:400;
-    letter-spacing:.04em
+  #mini .bars u em{
+    position:absolute;inset:0 auto 0 0;width:0%;background:var(--gold);
+    box-shadow:0 0 8px var(--gold);transition:width .07s linear
   }
+  @media (max-width:720px){
+    #mini{padding:0 14px 8px}
+    #mini canvas{height:34px}
+    #mini .bars span:nth-child(n+2){display:none}
+  }
+
   /* シネマモード：UI を完全に隠す */
-  body.cinema .hud,body.cinema #info{opacity:0!important;pointer-events:none}
+  body.cinema .hud,body.cinema #mini{opacity:0!important;pointer-events:none}
 
   /* ---------- 下部コントロール ---------- */
-  #bottom{left:0;right:0;bottom:0;padding:18px 26px 22px;
+  #bottom{left:0;right:0;bottom:0;padding:18px 26px 86px;
           background:linear-gradient(0deg,rgba(0,0,0,.72),transparent)}
   #scenes{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
   .chip{
@@ -182,7 +178,7 @@
   @media (max-width:720px){
     #meters{display:none}
     #top{padding:16px}
-    #bottom{padding:14px 16px 18px}
+    #bottom{padding:14px 16px 66px}
     .knob{display:none}
     #trackname{max-width:44vw}
     .chip{padding:7px 11px;font-size:10.5px}
@@ -205,30 +201,21 @@
   </div>
 </header>
 
-<aside id="info" class="hud">
+<div id="mini">
+  <canvas id="c-mini" width="2400" height="120"></canvas>
   <div class="row">
-    <div class="cell"><span class="k">KEY</span><span class="v" id="i-key">—</span></div>
-    <div class="cell"><span class="k">TEMPO</span><span class="v" id="i-bpm">—<small>BPM</small></span></div>
+    <span>KEY <b id="m-key">—</b></span><i></i>
+    <span><b id="m-bpm">—</b> BPM</span><i></i>
+    <span id="m-phase">静けさ</span>
+    <span class="grow"></span>
+    <span class="bars">
+      <span>低音<u><em id="m-bass"></em></u></span>
+      <span>中音<u><em id="m-mid"></em></u></span>
+      <span>高音<u><em id="m-high"></em></u></span>
+      <span>エネルギー<u><em id="m-energy"></em></u></span>
+    </span>
   </div>
-  <span class="k">CHORD</span>
-  <div id="chord">—</div>
-  <div id="prog"></div>
-  <div class="cap">コード進行</div>
-  <hr>
-  <canvas id="c-chroma" width="416" height="84"></canvas>
-  <div class="cap">クロマ ─ 12 音のエネルギー</div>
-  <canvas id="c-spec" width="416" height="96"></canvas>
-  <div class="cap">スペクトル</div>
-  <canvas id="c-wave" width="416" height="56"></canvas>
-  <div class="cap">波形</div>
-  <hr>
-  <div class="meter"><div class="lbl">低音 BASS</div><div class="bar"><i id="m-bass"></i></div></div>
-  <div class="meter"><div class="lbl">中音域 MID</div><div class="bar"><i id="m-mid"></i></div></div>
-  <div class="meter"><div class="lbl">高音域 HIGH</div><div class="bar"><i id="m-high"></i></div></div>
-  <div class="meter"><div class="lbl">エネルギー</div><div class="bar"><i id="m-energy"></i></div></div>
-  <div id="pal"></div>
-  <div class="cap">シーンの配色</div>
-</aside>
+</div>
 
 <footer id="bottom" class="hud">
   <div id="scenes"></div>
@@ -267,7 +254,7 @@
       <button class="btn" id="demo">デモ音源で見る</button>
       <button class="btn" id="mic">マイク入力</button>
     </div>
-    <div class="note">スペース = 再生/停止 &nbsp;・&nbsp; 1〜6 = シーン切替 &nbsp;・&nbsp; F = 全画面 &nbsp;・&nbsp; I = 情報パネル &nbsp;・&nbsp; H = UI 表示切替</div>
+    <div class="note">スペース = 再生/停止 &nbsp;・&nbsp; 1〜6 = シーン切替 &nbsp;・&nbsp; F = 全画面 &nbsp;・&nbsp; I = 情報表示 &nbsp;・&nbsp; H = UI 表示切替</div>
   </div>
 </div>
 
@@ -821,22 +808,11 @@ class DemoTrack {
 }
 
 /* ----------------------------------------------------------------------
-   1c. 楽曲解析 — キー / コード / テンポ
-       クロマ（12 音のエネルギー分布）を軸に、コード進行とキーを推定する。
+   1c. 楽曲解析 — キー / テンポ
+       クロマ（12 音のエネルギー分布）からキーを、
+       オンセット強度の自己相関からテンポを推定する。
    ---------------------------------------------------------------------- */
 const PITCH_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-
-/* コード型。上から順に優先され、同点なら単純な三和音が選ばれる */
-const CHORD_TYPES = [
-  { suffix: '',     tones: [0, 4, 7]      },
-  { suffix: 'm',    tones: [0, 3, 7]      },
-  { suffix: 'sus4', tones: [0, 5, 7]      },
-  { suffix: '7',    tones: [0, 4, 7, 10]  },
-  { suffix: 'm7',   tones: [0, 3, 7, 10]  },
-  { suffix: 'maj7', tones: [0, 4, 7, 11]  },
-  { suffix: 'dim',  tones: [0, 3, 6]      },
-  { suffix: 'aug',  tones: [0, 4, 8]      }
-];
 
 /* Krumhansl-Schmuckler のキープロファイル */
 const KEY_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
@@ -847,15 +823,10 @@ class MusicAnalyzer {
     this.chroma = new Float32Array(12);      // 平滑化後
     this._raw = new Float32Array(12);
     this._long = new Float32Array(12);       // キー推定用の長期平均
-    this.chord = '—';
-    this.chordRoot = -1;
-    this.chordConf = 0;
-    this.progression = [];                   // 直近のコード進行
     this.key = '—';
     this.keyRoot = -1;
     this.keyMinor = false;
     this.bpm = 0;
-    this._cand = ''; this._candN = 0;
 
     /* テンポ推定：20ms ごとにオンセット強度を貯め、自己相関で周期を探す */
     this._ob = new Float32Array(512);
@@ -889,7 +860,6 @@ class MusicAnalyzer {
         this.chroma[i] = approach(this.chroma[i], raw[i], 7, dt);
         this._long[i] = approach(this._long[i], raw[i], 0.06, dt);   // 約 16 秒
       }
-      this._matchChord();
       this._matchKey();
     } else {
       for (let i = 0; i < 12; i++) this.chroma[i] = approach(this.chroma[i], 0, 3, dt);
@@ -906,40 +876,6 @@ class MusicAnalyzer {
     }
     this._bpmClock += dt;
     if (this._bpmClock > 1) { this._bpmClock = 0; this._estimateTempo(); }
-  }
-
-  _matchChord() {
-    const c = this.chroma;
-    let best = null, bestScore = -1e9;
-    for (let root = 0; root < 12; root++) {
-      for (let ti = 0; ti < CHORD_TYPES.length; ti++) {
-        const T = CHORD_TYPES[ti];
-        let inSum = 0, outSum = 0;
-        for (let pc = 0; pc < 12; pc++) {
-          const rel = (pc - root + 12) % 12;
-          if (T.tones.indexOf(rel) >= 0) inSum += c[pc];
-          else outSum += c[pc];
-        }
-        // 構成音に寄っているほど高く、余計な音が鳴っていると下がる
-        const score = inSum / T.tones.length - 0.45 * (outSum / (12 - T.tones.length))
-                    - ti * 0.013;   // 単純な和音を優先し、まれな型は選ばれにくくする
-        if (score > bestScore) { bestScore = score; best = { root, T }; }
-      }
-    }
-    if (!best || bestScore < 0.17) { this.chordConf = 0; return; }
-    this.chordConf = clamp(bestScore * 2.2, 0, 1);
-    const name = PITCH_NAMES[best.root] + best.T.suffix;
-    /* ちらつき防止：同じ候補が続いたときだけ確定させる */
-    if (name === this.chord) { this._cand = ''; this._candN = 0; return; }
-    if (name === this._cand) this._candN++;
-    else { this._cand = name; this._candN = 1; }
-    if (this._candN >= 3) {
-      this.chord = name;
-      this.chordRoot = best.root;
-      this.progression.push(name);
-      if (this.progression.length > 8) this.progression.shift();
-      this._cand = ''; this._candN = 0;
-    }
   }
 
   _matchKey() {
@@ -4046,113 +3982,60 @@ window.addEventListener('resize', () => {
 });
 
 /* ----------------------------------------------------------------------
-   情報パネルの描画
+   常設の情報ストリップ
+   映像を邪魔しないよう、画面下端に薄く出したままにする。
    ---------------------------------------------------------------------- */
-const NOTE_LABELS = ['C', '', 'D', '', 'E', 'F', '', 'G', '', 'A', '', 'B'];
-const cvs = id => { const c = $(id); return { c, x: c.getContext('2d') }; };
-const gChroma = cvs('c-chroma'), gSpec = cvs('c-spec'), gWave = cvs('c-wave');
-let lastChord = '', lastPalScene = -1;
+const gMini = (() => { const c = $('c-mini'); return { c, x: c.getContext('2d') }; })();
 
-function drawChroma(m) {
-  const { c, x } = gChroma, W = c.width, H = c.height;
+function drawMini(a) {
+  const { c, x } = gMini, W = c.width, H = c.height;
   x.clearRect(0, 0, W, H);
-  const bw = W / 12;
-  for (let i = 0; i < 12; i++) {
-    const v = clamp(m ? m.chroma[i] : 0, 0, 1);
-    const h = (H - 16) * v;
-    const inChord = m && m.chordRoot >= 0 && chordHas(m, i);
-    x.fillStyle = inChord ? 'rgba(255,207,138,.92)' : 'rgba(255,255,255,.22)';
-    x.fillRect(i * bw + 2, H - 14 - h, bw - 4, h);
-    if (NOTE_LABELS[i]) {
-      x.fillStyle = 'rgba(255,255,255,.4)';
-      x.font = '15px sans-serif';
-      x.textAlign = 'center';
-      x.fillText(NOTE_LABELS[i], i * bw + bw / 2, H - 1);
+
+  /* スペクトル：下寄せの棒。対数配置で低音側をつぶさない */
+  const sp = a.spectrum;
+  if (sp) {
+    const bars = 128, n = sp.length;
+    const binHz = (audio.ctx ? audio.ctx.sampleRate : 48000) / 4096;
+    const LO = 40, HI = 16000;
+    x.fillStyle = 'rgba(255,207,138,.6)';
+    for (let i = 0; i < bars; i++) {
+      const hz0 = LO * Math.pow(HI / LO, i / bars);
+      const hz1 = LO * Math.pow(HI / LO, (i + 1) / bars);
+      const k0 = Math.min(n - 1, Math.floor(hz0 / binHz));
+      const k1 = Math.min(n, Math.max(k0 + 1, Math.ceil(hz1 / binHz)));
+      let sum = 0, cnt = 0;
+      for (let k = k0; k < k1; k++) { sum += sp[k] || 0; cnt++; }
+      const v = (sum / Math.max(1, cnt)) / 255;
+      const h = Math.pow(v, 0.9) * H * 0.62;
+      if (h < 0.6) continue;
+      x.fillRect(i * (W / bars), H - h, W / bars - 2.5, h);
     }
   }
-}
-/** そのピッチクラスが、いま鳴っているコードの構成音か */
-function chordHas(m, pc) {
-  const type = CHORD_TYPES.find(t => m.chord === PITCH_NAMES[m.chordRoot] + t.suffix);
-  if (!type) return false;
-  return type.tones.indexOf((pc - m.chordRoot + 12) % 12) >= 0;
-}
 
-function drawSpectrum(a) {
-  const { c, x } = gSpec, W = c.width, H = c.height;
-  x.clearRect(0, 0, W, H);
-  const sp = a.spectrum;
-  if (!sp) return;
-  const bars = 56, nyq = sp.length;
-  x.fillStyle = 'rgba(255,207,138,.75)';
-  for (let i = 0; i < bars; i++) {
-    /* 対数配置にして低音側をつぶさない */
-    const f0 = Math.pow(nyq, i / bars), f1 = Math.pow(nyq, (i + 1) / bars);
-    let sum = 0, n = 0;
-    for (let k = Math.floor(f0); k < Math.max(Math.floor(f0) + 1, f1); k++) { sum += sp[k] || 0; n++; }
-    const v = (sum / Math.max(1, n)) / 255;
-    const h = Math.pow(v, 0.85) * H;
-    x.fillRect(i * (W / bars), H - h, W / bars - 1.5, h);
-  }
-}
-
-function drawWave(a) {
-  const { c, x } = gWave, W = c.width, H = c.height;
-  x.clearRect(0, 0, W, H);
+  /* 波形：上寄りに 1 本 */
   const wv = a.wave;
-  if (!wv) return;
-  x.strokeStyle = 'rgba(255,225,190,.85)';
-  x.lineWidth = 2;
-  x.beginPath();
-  const step = Math.max(1, Math.floor(wv.length / W));
-  for (let i = 0, px = 0; i < wv.length; i += step, px++) {
-    const y = H / 2 - wv[i] * H * 0.9;
-    i === 0 ? x.moveTo(px, y) : x.lineTo(px, y);
-  }
-  x.stroke();
-}
-
-function drawPalette(scene) {
-  const el = $('pal');
-  el.innerHTML = '';
-  for (const [hex, name] of (scene.palette || [])) {
-    const d = document.createElement('div');
-    d.style.background = hex;
-    /* 明るい色の上では文字を黒にしないと読めない */
-    const r = parseInt(hex.substr(1, 2), 16), g = parseInt(hex.substr(3, 2), 16), b = parseInt(hex.substr(5, 2), 16);
-    const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    const dark = lum > 0.55;
-    d.innerHTML = `<b style="color:${dark ? 'rgba(0,0,0,.78)' : 'rgba(255,255,255,.88)'};` +
-                  `text-shadow:none">${name}</b>`;
-    d.title = `${name} ${hex}`;
-    el.appendChild(d);
+  if (wv) {
+    x.strokeStyle = 'rgba(255,244,224,1)';
+    x.lineWidth = 2.8;
+    x.beginPath();
+    const step = Math.max(1, Math.floor(wv.length / W));
+    const cy = H * 0.30;
+    for (let i = 0, px = 0; i < wv.length; i += step, px++) {
+      const y = cy - wv[i] * H * 0.30;
+      i === 0 ? x.moveTo(px, y) : x.lineTo(px, y);
+    }
+    x.stroke();
   }
 }
 
 function updateInfo(a) {
   const m = a.music;
-  if (!m) return;
-  $('i-key').textContent = m.key === '—' ? '—' : m.key + (m.keyMinor ? '' : '');
-  $('i-bpm').innerHTML = (m.bpm ? Math.round(m.bpm) : '—') + '<small>BPM</small>';
-  if (m.chord !== lastChord) {
-    lastChord = m.chord;
-    $('chord').textContent = m.chord;
-    const p = $('prog');
-    p.innerHTML = '';
-    m.progression.slice(-6).forEach((name, i, arr) => {
-      const s = document.createElement('span');
-      s.textContent = name;
-      if (i === arr.length - 1) s.className = 'now';
-      p.appendChild(s);
-    });
+  if (m) {
+    $('m-key').textContent = m.key;
+    $('m-bpm').textContent = m.bpm ? Math.round(m.bpm) : '—';
   }
-  drawChroma(m);
-  drawSpectrum(a);
-  drawWave(a);
-  if (renderer.cur !== lastPalScene) {
-    lastPalScene = renderer.cur;
-    drawPalette(renderer.scenes[renderer.cur]);
-  }
+  $('m-phase').textContent = a.phaseName;
+  drawMini(a);
 }
 
 /* --- メインループ --- */
@@ -4243,7 +4126,6 @@ function loop() {
 /* --- 起動 --- */
 renderer.resize();
 selectScene(0, true);
-drawPalette(renderer.scenes[0]);
 renderer.film = 0.70;
 audio.setVolume(0.85);
 loop();
