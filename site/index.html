@@ -1,0 +1,465 @@
+<title>へったのに、ふえた — 絵本設計一式</title>
+<style>
+:root{
+  --ground:#D9D2C2; --ground-2:#CFC7B5;
+  --paper:#F7F1E3; --paper-edge:#E7DFCB;
+  --ink:#3A3226; --ink-soft:#6B6153;
+  --muted:#857A69;
+  --apple:#C0413A; --leaf:#5A9160; --soil:#8B6F52; --sky:#8FB8D4;
+  --rule:#C2B9A6;
+  --shadow:rgba(58,50,38,.20);
+  --gothic:"Hiragino Maru Gothic ProN","Hiragino Sans","Yu Gothic Medium","Yu Gothic","Noto Sans JP","Meiryo",sans-serif;
+  --mincho:"Hiragino Mincho ProN","Yu Mincho","YuMincho","Noto Serif JP","Georgia",serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --ground:#191714; --ground-2:#221F1B;
+    --paper:#322D27; --paper-edge:#3D372F;
+    --ink:#EDE5D3; --ink-soft:#C3B8A3;
+    --muted:#968B79;
+    --apple:#E5796C; --leaf:#8CBB86; --soil:#B79572; --sky:#9CC2DC;
+    --rule:#463F36;
+    --shadow:rgba(0,0,0,.5);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#191714; --ground-2:#221F1B;
+  --paper:#322D27; --paper-edge:#3D372F;
+  --ink:#EDE5D3; --ink-soft:#C3B8A3;
+  --muted:#968B79;
+  --apple:#E5796C; --leaf:#8CBB86; --soil:#B79572; --sky:#9CC2DC;
+  --rule:#463F36;
+  --shadow:rgba(0,0,0,.5);
+}
+:root[data-theme="light"]{
+  --ground:#D9D2C2; --ground-2:#CFC7B5;
+  --paper:#F7F1E3; --paper-edge:#E7DFCB;
+  --ink:#3A3226; --ink-soft:#6B6153;
+  --muted:#857A69;
+  --apple:#C0413A; --leaf:#5A9160; --soil:#8B6F52; --sky:#8FB8D4;
+  --rule:#C2B9A6;
+  --shadow:rgba(58,50,38,.20);
+}
+
+*{box-sizing:border-box;}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:var(--mincho); line-height:1.9;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1140px;margin:0 auto;padding:0 20px;}
+.narrow{max-width:640px;margin-left:auto;margin-right:auto;}
+
+/* ---------- hero ---------- */
+header.hero{padding:80px 0 56px;}
+.eyebrow{
+  font-family:var(--gothic); font-size:.72rem; letter-spacing:.22em;
+  text-transform:uppercase; color:var(--muted); margin:0 0 22px;
+}
+h1{
+  font-family:var(--gothic); font-weight:700;
+  font-size:clamp(2.4rem,7vw,4.2rem); line-height:1.15; letter-spacing:.02em;
+  margin:0 0 6px; text-wrap:balance;
+}
+.subtitle{font-family:var(--gothic);font-size:1rem;color:var(--muted);margin:0 0 34px;letter-spacing:.08em;}
+.logline{font-size:clamp(1.05rem,2.4vw,1.3rem);line-height:1.85;margin:0 0 30px;max-width:34em;}
+.thesis{
+  font-family:var(--gothic); font-weight:700;
+  font-size:clamp(1.3rem,3.6vw,1.9rem); line-height:1.6;
+  color:var(--apple); margin:0 0 34px; letter-spacing:.03em;
+}
+.meta{
+  display:flex; flex-wrap:wrap; gap:10px 26px;
+  font-family:var(--mono); font-size:.78rem; color:var(--muted);
+  padding-top:24px; border-top:1px solid var(--rule);
+}
+
+/* ---------- sections ---------- */
+section{padding:56px 0;}
+h2{
+  font-family:var(--gothic); font-weight:700;
+  font-size:clamp(1.4rem,3.4vw,1.9rem); letter-spacing:.04em;
+  margin:0 0 8px; text-wrap:balance;
+}
+.sec-note{font-family:var(--gothic);font-size:.85rem;color:var(--muted);margin:0 0 40px;}
+h3{font-family:var(--gothic);font-size:1.02rem;letter-spacing:.04em;margin:36px 0 12px;}
+p{margin:0 0 1.1em;}
+
+/* ---------- book spreads ---------- */
+.book{display:flex;flex-direction:column;gap:34px;}
+.spread{
+  display:grid; grid-template-columns:1fr 1fr;
+  filter:drop-shadow(0 10px 26px var(--shadow));
+}
+.pg{
+  position:relative; aspect-ratio:1/1; background:var(--paper);
+  display:flex; flex-direction:column; align-items:center;
+  padding:9% 7% 34px;
+  font-family:var(--gothic); text-align:center;
+}
+/* gutter side gets the wider margin — mirrored, per the print spec */
+.pg.left{padding-right:11%; box-shadow:inset -22px 0 26px -22px var(--shadow);}
+.pg.right{padding-left:11%; box-shadow:inset 22px 0 26px -22px var(--shadow);}
+.pg.blank{background:var(--paper-edge);}
+.pg .line{font-size:clamp(.82rem,1.85vw,1.12rem);line-height:1.95;letter-spacing:.03em;}
+.pg .line.gap{height:.9em;}
+.pg.big .line{font-size:clamp(1.05rem,2.7vw,1.7rem);font-weight:700;}
+.pg.title .line{font-size:clamp(1.1rem,3vw,1.9rem);font-weight:700;letter-spacing:.06em;}
+.pg.ded .line{font-size:clamp(.76rem,1.6vw,.95rem);color:var(--ink-soft);}
+.pgnum{
+  position:absolute; bottom:14px; font-family:var(--mono);
+  font-size:.62rem; color:var(--muted); letter-spacing:.06em;
+}
+.pg.left .pgnum{left:16px;}
+.pg.right .pgnum{right:16px;}
+.tag{
+  position:absolute; top:14px; font-family:var(--gothic);
+  font-size:.6rem; letter-spacing:.14em; padding:3px 7px; border-radius:2px;
+  color:var(--paper); background:var(--apple);
+}
+.tag.hold{background:var(--soil);}
+.tag.loop{background:var(--leaf);}
+.pg.left .tag{left:14px;}
+.pg.right .tag{right:14px;}
+.pg .art{
+  margin-top:auto; font-family:var(--gothic); font-size:.66rem;
+  color:var(--muted); line-height:1.7; max-width:26em; letter-spacing:.02em;
+  padding-bottom:4px;
+}
+
+/* ---------- shrink / grow diagram ---------- */
+.gauge{
+  display:grid; grid-template-columns:repeat(6,1fr); gap:8px;
+  background:var(--ground-2); border:1px solid var(--rule);
+  padding:30px 20px; border-radius:3px; margin-top:14px;
+}
+.step{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;}
+.apple-slot{height:80px;display:flex;align-items:center;justify-content:center;}
+.apple{background:var(--apple);border-radius:50%;}
+.frac{font-family:var(--mono);font-size:.72rem;color:var(--ink-soft);}
+.dots{display:flex;flex-wrap:wrap;gap:3px;justify-content:center;max-width:44px;}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--leaf);}
+.who{font-family:var(--gothic);font-size:.62rem;color:var(--muted);letter-spacing:.04em;}
+
+/* ---------- afterword ---------- */
+.afterword{
+  background:var(--paper); padding:clamp(30px,6vw,60px);
+  border-radius:2px; filter:drop-shadow(0 10px 26px var(--shadow));
+}
+.afterword h3{font-family:var(--mincho);font-size:1.1rem;letter-spacing:.1em;margin:0 0 26px;}
+.afterword p{font-size:.96rem;line-height:2.05;}
+.afterword .pull{color:var(--apple);font-weight:700;}
+
+/* ---------- tables ---------- */
+.tablewrap{overflow-x:auto;}
+table{border-collapse:collapse;width:100%;font-family:var(--gothic);font-size:.85rem;min-width:520px;}
+th,td{text-align:left;padding:13px 14px;border-bottom:1px solid var(--rule);vertical-align:top;line-height:1.75;}
+th{font-size:.68rem;letter-spacing:.14em;color:var(--muted);font-weight:600;text-transform:uppercase;}
+td.k{color:var(--ink);font-weight:600;white-space:nowrap;}
+td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap;}
+
+/* ---------- misc ---------- */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);}
+.card{background:var(--ground-2);padding:24px 22px;}
+.card .lab{font-family:var(--gothic);font-size:.66rem;letter-spacing:.14em;color:var(--muted);margin:0 0 10px;}
+.card .body{font-family:var(--gothic);font-size:.87rem;line-height:1.8;margin:0;}
+.quote{
+  border-left:3px solid var(--apple); padding:4px 0 4px 20px; margin:26px 0;
+  font-family:var(--gothic); font-size:1rem; line-height:1.9;
+}
+.warn{border-left:3px solid var(--soil);padding:4px 0 4px 20px;margin:26px 0;font-family:var(--gothic);font-size:.86rem;line-height:1.85;color:var(--ink-soft);}
+a{color:var(--apple);text-underline-offset:3px;}
+a:focus-visible,summary:focus-visible{outline:2px solid var(--apple);outline-offset:3px;}
+code{font-family:var(--mono);font-size:.84em;background:var(--ground-2);padding:2px 6px;border-radius:2px;}
+footer{padding:60px 0 90px;border-top:1px solid var(--rule);font-family:var(--gothic);font-size:.82rem;color:var(--muted);}
+hr.rule{border:0;border-top:1px solid var(--rule);margin:0;}
+
+@media (max-width:720px){
+  .spread{grid-template-columns:1fr;gap:2px;}
+  .pg{aspect-ratio:auto;min-height:58vw;}
+  .pg.left,.pg.right{padding-left:9%;padding-right:9%;box-shadow:none;}
+  .gauge{grid-template-columns:repeat(3,1fr);gap:20px 8px;}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
+</style>
+
+<div class="wrap">
+
+<header class="hero">
+  <p class="eyebrow">Amazon KDP ／ 幼児向け絵本 ／ 全36ページ</p>
+  <h1>へったのに、ふえた</h1>
+  <p class="subtitle">りんご ひとつの おはなし</p>
+  <p class="logline">りんごを ひとつ、6人で分けたら、なくなりました。<br>——けれど、そこに種がひとつ残っていました。</p>
+  <p class="thesis">わけると、へる。でも、ふえる。</p>
+  <div class="meta">
+    <span>対象 2–5歳</span><span>読み聞かせ 4分</span><span>36ページ</span>
+    <span>8.5 × 8.5 in</span><span>左開き</span>
+  </div>
+</header>
+
+<hr class="rule">
+
+<section>
+  <h2>本文（全文）</h2>
+  <p class="sec-note">実際の見開きの並びで表示しています。奇数＝右ページ、偶数＝左ページ。ノド（綴じ側）の余白が広いのは印刷仕様どおりです。</p>
+  <div class="book" id="book"></div>
+</section>
+
+<section>
+  <h2>りんごと なかま</h2>
+  <p class="sec-note">この絵本が同じ1枚の絵で同時に見せている2つの量。円の面積がりんごの残量、点が食べた人数です。</p>
+  <div class="gauge" id="gauge"></div>
+</section>
+
+<section>
+  <h2>p34「おうちのかたへ」</h2>
+  <p class="sec-note">巻末に置く大人向けページ。ここが本作の二重構造の受け皿であり、レビューの起点でもあります。</p>
+  <div class="afterword">
+    <h3>おうちのかたへ</h3>
+    <p>この絵本には、ひとつの原理が隠れています。</p>
+    <p>「分けると、減る」。それは正しい。<br>けれど、分けたぶんだけ増えるものがあります。<br>いっしょに食べる人。いっしょに待つ時間。<br>そして、最後に残る種。</p>
+    <p>りんごは32分の1になりました。<br>食べた人は6倍になり、やがて木になり、数えきれない実になりました。</p>
+    <p class="pull">減ったものと、増えたもの。どちらも本当です。<br>どちらを数えるかで、世界の見え方が変わります。</p>
+    <p>もうひとつ。<br>25ページと26ページでは、何も起きません。<br>土の中では根が伸びているのに、地上からは見えない。<br>子育ても、学びも、たいていのことがそうです。<br><strong>「何も起きない日」は、失敗ではありません。</strong></p>
+    <p>いちばん小さなピピが、いちばん小さなかけらを受け取りました。種は、そこから出てきます。<br>いちばん少なく受け取った者が、次を持っている。<br>——この絵本が、いちばん言いたかったことです。</p>
+    <p>さいごに。<br>りんごでも、おやつでも、なんでもかまいません。<br>読み終えたら、お子さんと、はんぶん、こ。<br><span class="pull">それがこの本の、ほんとうの最後のページです。</span></p>
+  </div>
+  <p class="sec-note" style="margin-top:18px;">※ p35は著者紹介・奥付、p36は白ページ。</p>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2>扱っている原理原則</h2>
+  <p class="sec-note">5つとも、本文では説明していません。絵の中で起こるだけです。</p>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>原理</th><th>幼児が受け取るもの</th><th>大人が受け取るもの</th></tr></thead>
+    <tbody>
+      <tr><td class="k">分けても価値は失われない</td><td>はんぶんこは楽しい</td><td>非ゼロサム。知識も技術も愛も、分けて減らない</td></tr>
+      <tr><td class="k">減少と増加は同時に起きる</td><td>りんごは小さく、仲間は多く</td><td>何を数えるかで世界の見え方が変わる</td></tr>
+      <tr><td class="k">出し切った先に種が残る</td><td>最後にたねが出てくる</td><td>与えきった場所にこそ次が生まれる</td></tr>
+      <tr><td class="k">何も起きない時間が要る</td><td>待つとめが出る</td><td>遅延報酬・複利・見えない進捗</td></tr>
+      <tr><td class="k">受け取った者が渡す側になる</td><td>最後にまた「はんぶん、こ」</td><td>循環・恩送り・世代</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2>売れている絵本から取った構造</h2>
+  <p class="sec-note">ロングセラーに共通するのは「話が良い」ことではなく、構造が良いことでした。</p>
+  <div class="cards">
+    <div class="card"><p class="lab">繰り返し ＋ わずかな変化</p><p class="body">2回目でパターンを学習し、3回目で次を予測する。当たると万能感が出る。これが「もう1回」の正体。<br>→「いいなあ」「はんぶん、こ！」「◯にんに なった」の3拍を5回。</p></div>
+    <div class="card"><p class="lab">声に出して気持ちいい</p><p class="body">読み手の口が疲れないことが、50回読まされる本の条件。<br>→ しゃく／ぽとん／ぴょこん／ざあざあ／ぐうぐう。</p></div>
+    <div class="card"><p class="lab">めくること自体が仕掛け</p><p class="body">「それでも、」でページが終わり、めくると「はんぶん、こ！」。「なにも おきない」の次に、土の中の断面が見える。</p></div>
+    <div class="card"><p class="lab">参加できる余地</p><p class="body">「はんぶん、こ！」に両手で切る動作をつける前提の設計。ふたり→ろくにんの数唱が副層。</p></div>
+    <div class="card"><p class="lab">絵だけで筋が通る</p><p class="body">幼児は文字を読まない。全ページ、りんごの残量と人数が一目で分かる構図に固定。</p></div>
+    <div class="card"><p class="lab">大人には別の意味で刺さる</p><p class="body">『おおきな木』『100万回生きたねこ』が世代を超える理由。レビューを生む最大の要因。</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>ページの偶奇まで設計している</h2>
+  <div class="narrow">
+    <p>左開きなので、読者がめくる直前に最後に見るのは<strong>常に奇数ページ</strong>です。だから「ため」を奇数に、payoffを次の偶数に置いています。</p>
+  </div>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>ため（奇数・右）</th><th>payoff（偶数・左）</th><th>効果</th></tr></thead>
+    <tbody>
+      <tr><td class="k">p19 それでも、クルは いいました。</td><td class="k">p20「はんぶん、こ！」</td><td>本作最大の一言をめくりで出す</td></tr>
+      <tr><td class="k">p25 まった。なにも おきない。</td><td class="k">p26 つちの なかは、ないしょ。</td><td>見えない進捗が読者にだけ見える</td></tr>
+      <tr><td class="k">p29 あきが きて、ふゆが きて。</td><td class="k">p30 りんごが、いっぱい。</td><td>冬で終わらせてから実りを開く</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="quote">p3（冒頭）と p33（結末）は、どちらも奇数＝右ページ。<br>円環構造は「同じ絵」だけでなく「同じ位置に現れること」で成立します。</div>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2>レビューが書かれる設計</h2>
+  <p class="sec-note">レビューは「良い本だったから」ではなく、書きたい理由が本の中に仕込まれているときに書かれます。</p>
+  <div class="narrow">
+    <p>いちばん効くのは「うちの子が◯◯するようになりました」型です。親は本の感想ではなく<strong>わが子の変化</strong>を書く。だから本は、再現性のある子どもの行動を発生させなければなりません。</p>
+  </div>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>仕込み</th><th>発生する行動</th><th>生まれるレビュー文</th></tr></thead>
+    <tbody>
+      <tr><td class="k">「はんぶん、こ！」＋動作</td><td>3回目から一緒に言う</td><td>「読む前に自分で『はんぶんこ！』と言います」</td></tr>
+      <tr><td class="k">p34の宿題</td><td>現実で分けるようになる</td><td>「本当にお菓子を半分くれるようになって驚きました」</td></tr>
+      <tr><td class="k">ふたり→ろくにん</td><td>指を折って数える</td><td>「数を数えられるようになりました」</td></tr>
+      <tr><td class="k">p3とp33の円環</td><td>読み終わると最初に戻る</td><td>「エンドレスになります（笑）」</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <h3>引用されやすい一文を意図的に置く</h3>
+  <div class="narrow">
+    <p>レビューで引用が発生すると、そのレビューは他の購入者に読まれ、購入を後押しします。引用されやすいのは短く・断定的で・比喩でない文。第一候補は<strong>「つちの なかは、ないしょ。」</strong>です。</p>
+  </div>
+  <div class="warn"><strong>規約について。</strong>家族・知人へのレビュー依頼、レビュー交換、対価を伴うレビューはいずれもアカウント停止事由です。初速づくりは、KDPセレクトの無料キャンペーン、園や図書館への献本（対価を求めない）、絵本ナビ等での先行レビューに限定しています。</div>
+</section>
+
+<section>
+  <h2>KDP入稿の数字</h2>
+  <p class="sec-note">KDPの料金は改定されます。入稿直前に公式の計算ツールで再確認が必要です（2026年8月時点の調査に基づく設計値）。</p>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>項目</th><th>設定</th><th>理由</th></tr></thead>
+    <tbody>
+      <tr><td class="k">判型</td><td class="num">8.5 × 8.5 in</td><td>絵本の定番。正方形は書影が目立つ</td></tr>
+      <tr><td class="k">ページ数</td><td class="num">36 p</td><td>KDP最小は24p。本編31p＋前後付物5p</td></tr>
+      <tr><td class="k">インク</td><td>プレミアムカラー</td><td>標準カラーはマット紙で赤と緑が沈む</td></tr>
+      <tr><td class="k">PDFページ</td><td class="num">621 × 630 pt</td><td>2588 × 2625 px @300dpi</td></tr>
+      <tr><td class="k">裁ち落とし</td><td class="num">3.2 mm</td><td>天・地・小口の3辺のみ。ノドには付かない</td></tr>
+      <tr><td class="k">印刷コスト</td><td class="num">350 円</td><td>固定206円 ＋ 36p × 4円</td></tr>
+      <tr><td class="k">ペーパーバック</td><td class="num">1,480 円</td><td>手取り538円／冊。1,000円未満はレビューの質が下がる</td></tr>
+      <tr><td class="k">Kindle版</td><td class="num">980 円</td><td>固定レイアウト・70%。手取り約644円</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="warn"><strong>最頻の事故。</strong>裁ち落としが天地小口の3辺だけでノドに付かないため、仕上がり範囲の左右位置が奇数／偶数ページで反転します。ここを揃えると全ページの絵が1ページおきに3.2mmずれます。<code>tools/make_interior_template.py</code> がその反転込みのガイドPDFを出すので、絵が1枚もない段階で検証できます。</div>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2>決めていただきたいこと</h2>
+  <div class="cards">
+    <div class="card"><p class="lab">01 ／ 著者名・発行者名</p><p class="body">p35の奥付とKDPの登録名が埋まりません。</p></div>
+    <div class="card"><p class="lab">02 ／ イラストの制作手段</p><p class="body">人に発注か、画像生成AIか。AIの場合、KDPは生成AIコンテンツの申告が必須です。AI前提なら作画指示書のプロンプトと制作順序がそのまま使えます。</p></div>
+    <div class="card"><p class="lab">03 ／ タイトル</p><p class="body">『はんぶんこ』系は福音館・こぐま社・講談社と既刊が多く、寄せると埋もれます。現案は矛盾で大人の手を止める狙い。</p></div>
+  </div>
+</section>
+
+<footer>
+  リポジトリ：<a href="https://github.com/chameleonkik-design/-/tree/claude/kdp-childrens-book-design-4cvh48">chameleonkik-design/- ／ claude/kdp-childrens-book-design-4cvh48</a><br>
+  本文原稿・作画指示書（全ページの英語プロンプト付き）・KDP入稿仕様・レビュー誘発設計の全文はリポジトリにあります。
+</footer>
+
+</div>
+
+<script>
+const P = [
+  [1,  "title", ["へったのに、ふえた"], null, "まっさらな背景に、りんごがひとつだけ。"],
+  [2,  "ded",   ["わけてくれた","ぜんぶの ひとへ"], null, null],
+  [3,  "story", ["もりに、","りんごが ひとつ。"], null, "森の遠景。落ちたりんごがひとつ。コロはまだ遠くに小さく。p33と同じ画角。"],
+  [4,  "story", ["くまの コロの","りんご。"], null, null],
+  [5,  "story", ["「いいなあ」","","ねずみの チッチ。"], null, null],
+  [6,  "story", ["コロは いいました。","","「はんぶん、こ！」"], null, "両手で左右に割った瞬間。汁が小さく跳ねる。"],
+  [7,  "story", ["しゃく、しゃく。","","ふたりに なった。"], null, null],
+  [8,  "story", ["「いいなあ」","","うさぎの ミミ。"], null, null],
+  [9,  "story", ["チッチは いいました。","","「はんぶん、こ！」"], null, null],
+  [10, "story", ["しゃく、しゃく。","","さんにんに なった。"], null, null],
+  [11, "story", ["「いいなあ」","","きつねの コン。"], null, null],
+  [12, "story", ["ミミは いいました。","","「はんぶん、こ！」"], null, null],
+  [13, "story", ["しゃく、しゃく。","","よにんに なった。"], null, null],
+  [14, "story", ["「いいなあ」","","りすの クル。"], null, null],
+  [15, "story", ["コンは いいました。","","「はんぶん、こ！」"], null, null],
+  [16, "story", ["しゃく、しゃく。","","ごにんに なった。"], null, null],
+  [17, "story", ["「いいなあ」","","ことりの ピピ。"], null, "ピピはここまでで最も小さく描く。"],
+  [18, "story", ["クルの りんごは、","もう こんなに ちいさい。"], null, "両手のアップ。爪ほどの大きさ。小ささが主役。"],
+  [19, "story", ["それでも、","クルは いいました。"], "hold", "顔だけ。まっすぐ前を見て、決意している。"],
+  [20, "big",   ["「はんぶん、こ！」"], "payoff", "本作でいちばん大きく、いちばん明るい1枚。光が差す。"],
+  [21, "story", ["しゃく。","","ろくにんに なった。"], null, "6人が横一列。全員が小さなかけらを持っている。"],
+  [22, "story", ["りんごは、","もう ない。"], null, null],
+  [23, "story", ["ぽとん。","","たねが ひとつ。"], null, "ピピのくちばしの下から種が落ちる。まだ地面に届いていない。"],
+  [24, "story", ["みんなで","つちを かけた。"], null, null],
+  [25, "story", ["まった。","","なにも おきない。"], "hold", "このページは意図的に退屈に描く。"],
+  [26, "story", ["ざあざあ。","ぐうぐう。","","つちの なかは、ないしょ。"], "payoff", "地面の断面図。上は雨の夜、下の土中で根が伸びている。読者だけが見られる。"],
+  [27, "story", ["ぴょこん。"], null, null],
+  [28, "story", ["はるが きて、","なつが きて、"], null, null],
+  [29, "story", ["あきが きて、","ふゆが きて。"], "hold", "冬で終わるので、めくる前は少しさびしい。"],
+  [30, "big",   ["りんごが、いっぱい。"], "payoff", "真下から見上げた大樹。空が見えないほどの実。最も密度の高い1枚。"],
+  [31, "story", ["ひとつが、","いっぱいに なった。"], null, null],
+  [32, "story", ["コロは、りんごを","ひとつ もって。"], null, "後ろ姿。隅に、まだ名前のない小さな動物がひとり。"],
+  [33, "story", ["さあ、","","「はんぶん、こ！」"], "loop", "p3とまったく同じ画角。コロが振り返り、読者にりんごを差し出している。"]
+];
+const TAGTEXT = {hold:"ため", payoff:"PAYOFF", loop:"円環"};
+
+function page(rec, side){
+  const el = document.createElement("div");
+  if(!rec){ el.className = "pg blank " + side; return el; }
+  const [n, kind, lines, tag, art] = rec;
+  el.className = "pg " + side + " " + (kind==="big"?"big":kind==="title"?"title":kind==="ded"?"ded":"");
+  if(tag){
+    const t = document.createElement("span");
+    t.className = "tag " + (tag==="hold"?"hold":tag==="loop"?"loop":"");
+    t.textContent = TAGTEXT[tag];
+    el.appendChild(t);
+  }
+  lines.forEach(function(s){
+    const d = document.createElement("div");
+    d.className = s === "" ? "line gap" : "line";
+    d.textContent = s;
+    el.appendChild(d);
+  });
+  if(art){
+    const a = document.createElement("div");
+    a.className = "art";
+    a.textContent = "絵：" + art;
+    el.appendChild(a);
+  }
+  const num = document.createElement("span");
+  num.className = "pgnum";
+  num.textContent = "p" + n;
+  el.appendChild(num);
+  return el;
+}
+
+(function(){
+  const book = document.getElementById("book");
+  const byNum = {};
+  P.forEach(function(r){ byNum[r[0]] = r; });
+  // p1 sits alone on the right; then spreads (2,3) (4,5) … (32,33)
+  const pairs = [[null, byNum[1]]];
+  for(let n = 2; n <= 32; n += 2) pairs.push([byNum[n], byNum[n+1]]);
+  pairs.forEach(function(pair){
+    const s = document.createElement("div");
+    s.className = "spread";
+    s.appendChild(page(pair[0], "left"));
+    s.appendChild(page(pair[1], "right"));
+    book.appendChild(s);
+  });
+
+  // shrink / grow diagram — circle area is proportional to the fraction
+  const STEPS = [
+    {f:"1",    v:1,      n:1, who:"コロ"},
+    {f:"1/2",  v:1/2,    n:2, who:"＋チッチ"},
+    {f:"1/4",  v:1/4,    n:3, who:"＋ミミ"},
+    {f:"1/8",  v:1/8,    n:4, who:"＋コン"},
+    {f:"1/16", v:1/16,   n:5, who:"＋クル"},
+    {f:"1/32", v:1/32,   n:6, who:"＋ピピ"}
+  ];
+  const g = document.getElementById("gauge");
+  STEPS.forEach(function(s){
+    const d = Math.max(9, Math.sqrt(s.v) * 72);
+    const step = document.createElement("div");
+    step.className = "step";
+    const slot = document.createElement("div");
+    slot.className = "apple-slot";
+    const ap = document.createElement("div");
+    ap.className = "apple";
+    ap.style.width = d + "px";
+    ap.style.height = d + "px";
+    slot.appendChild(ap);
+    const fr = document.createElement("div");
+    fr.className = "frac"; fr.textContent = s.f;
+    const dots = document.createElement("div");
+    dots.className = "dots";
+    for(let i = 0; i < s.n; i++){
+      const dt = document.createElement("span");
+      dt.className = "dot";
+      dots.appendChild(dt);
+    }
+    const w = document.createElement("div");
+    w.className = "who"; w.textContent = s.who;
+    step.appendChild(slot); step.appendChild(fr); step.appendChild(dots); step.appendChild(w);
+    g.appendChild(step);
+  });
+})();
+</script>
