@@ -1,0 +1,198 @@
+<title>プロンプト集 — へったのに、ふえた</title>
+<style>
+:root{
+  --ground:#D9D2C2; --panel:#EFE9DA; --field:#F7F1E3;
+  --ink:#3A3226; --ink-soft:#6B6153; --muted:#857A69;
+  --apple:#B93E37; --leaf:#4F8557; --rule:#C2B9A6; --shadow:rgba(58,50,38,.16);
+  --gothic:"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic Medium","Yu Gothic","Noto Sans JP","Meiryo",sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{--ground:#17150F; --panel:#211E19; --field:#2A2620;
+        --ink:#EDE5D3; --ink-soft:#C0B5A2; --muted:#948976;
+        --apple:#E7796B; --leaf:#8CBB86; --rule:#3D372F; --shadow:rgba(0,0,0,.5);}
+}
+:root[data-theme="dark"]{--ground:#17150F; --panel:#211E19; --field:#2A2620;
+  --ink:#EDE5D3; --ink-soft:#C0B5A2; --muted:#948976;
+  --apple:#E7796B; --leaf:#8CBB86; --rule:#3D372F; --shadow:rgba(0,0,0,.5);}
+:root[data-theme="light"]{--ground:#D9D2C2; --panel:#EFE9DA; --field:#F7F1E3;
+  --ink:#3A3226; --ink-soft:#6B6153; --muted:#857A69;
+  --apple:#B93E37; --leaf:#4F8557; --rule:#C2B9A6; --shadow:rgba(58,50,38,.16);}
+
+*{box-sizing:border-box;}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font-family:var(--gothic);line-height:1.8;-webkit-font-smoothing:antialiased;}
+.wrap{max-width:900px;margin:0 auto;padding:0 20px;}
+header{padding:64px 0 34px;}
+.eyebrow{font-size:.7rem;letter-spacing:.2em;color:var(--muted);margin:0 0 16px;text-transform:uppercase;}
+h1{font-size:clamp(1.7rem,4.6vw,2.5rem);letter-spacing:.02em;margin:0 0 12px;font-weight:700;text-wrap:balance;}
+.lede{color:var(--ink-soft);margin:0;max-width:44em;font-size:.95rem;}
+h2{font-size:1.05rem;letter-spacing:.06em;margin:0 0 6px;font-weight:700;}
+.sub{font-size:.82rem;color:var(--muted);margin:0 0 22px;}
+section{padding:34px 0;border-top:1px solid var(--rule);}
+
+ol.steps{list-style:none;counter-reset:s;padding:0;margin:0;display:flex;flex-direction:column;gap:2px;}
+ol.steps li{counter-increment:s;background:var(--panel);padding:14px 18px 14px 52px;position:relative;}
+ol.steps li::before{content:counter(s);position:absolute;left:18px;top:14px;
+  font-family:var(--mono);font-size:.78rem;color:var(--apple);font-weight:700;}
+.st{display:block;font-size:.92rem;font-weight:700;}
+.sd{display:block;font-size:.82rem;color:var(--ink-soft);line-height:1.7;}
+
+.tools{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);}
+.tool{background:var(--panel);padding:18px;}
+.tn{margin:0 0 6px;font-size:.86rem;font-weight:700;}
+.tt{margin:0;font-size:.8rem;color:var(--ink-soft);line-height:1.75;}
+
+ul.notes{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:12px;}
+ul.notes li{font-size:.85rem;color:var(--ink-soft);line-height:1.75;
+  border-left:3px solid var(--apple);padding-left:16px;}
+ul.notes strong{display:block;color:var(--ink);font-size:.88rem;}
+
+.block{background:var(--field);border:1px solid var(--rule);padding:16px 18px;position:relative;}
+pre{margin:0;font-family:var(--mono);font-size:.76rem;line-height:1.75;
+  white-space:pre-wrap;word-break:break-word;color:var(--ink);}
+
+.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 20px;}
+.count{font-family:var(--mono);font-size:.75rem;color:var(--muted);}
+button{font-family:var(--gothic);font-size:.75rem;letter-spacing:.06em;
+  background:var(--apple);color:#fff;border:0;padding:7px 14px;border-radius:2px;cursor:pointer;}
+button.ghost{background:transparent;color:var(--ink-soft);border:1px solid var(--rule);}
+button:hover{filter:brightness(1.08);}
+button:focus-visible{outline:2px solid var(--leaf);outline-offset:2px;}
+button.done{background:var(--leaf);}
+
+.card{background:var(--panel);border:1px solid var(--rule);margin-bottom:2px;}
+.card .hd{display:flex;gap:12px;align-items:baseline;justify-content:space-between;
+  padding:14px 18px 0;flex-wrap:wrap;}
+.card h3{margin:0;font-size:.92rem;font-weight:700;letter-spacing:.02em;}
+.card .nt{margin:2px 18px 12px;font-size:.78rem;color:var(--muted);line-height:1.7;}
+.card .body{padding:0 18px 16px;}
+.card pre{background:var(--field);border:1px solid var(--rule);padding:13px 15px;}
+.star h3{color:var(--apple);}
+footer{padding:44px 0 80px;border-top:1px solid var(--rule);font-size:.8rem;color:var(--muted);}
+a{color:var(--apple);text-underline-offset:3px;}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;}}
+</style>
+
+<div class="wrap">
+<header>
+  <p class="eyebrow">へったのに、ふえた ／ 作画用</p>
+  <h1>プロンプト集</h1>
+  <p class="lede">画像生成ツールにそのまま貼れる完成形です。共通の画風指定は各プロンプトに連結済みなので、追記は不要です。全36点。</p>
+</header>
+
+<section>
+  <h2>制作順序</h2>
+  <p class="sub">この順で作るとキャラクターの造形が崩れにくくなります。</p>
+  <ol class="steps"><li><span class="st">キャラクターシートを作る</span><span class="sd">6匹の造形をここで確定させる。以降すべてのページで参照画像として渡す。</span></li>
+<li><span class="st">p3 の背景を完成させる</span><span class="sd">以降の森はこの1枚から切り出して使い回す。ここで画角と光を決める。</span></li>
+<li><span class="st">p33 を p3 の img2img で作る</span><span class="sd">円環が成立するかを最初に検証する。ここが崩れると本の設計が崩れる。</span></li>
+<li><span class="st">繰り返しブロック（p5〜p16）を一括生成</span><span class="sd">同じシード・同じ構図で。構図を変えないことがこの絵本の設計。</span></li>
+<li><span class="st">単独ページ（p17〜p33）を作り込む</span><span class="sd">p20 と p30 に最も時間をかける。ここが本の山。</span></li>
+<li><span class="st">表紙を最後に作る</span><span class="sd">本文の色調が固まってから。サムネイル160px幅で判別できるか必ず縮小確認。</span></li></ol>
+</section>
+
+<section>
+  <h2>ツール別のコツ</h2>
+  <p class="sub">どれを使う場合も、キャラクターシートを参照画像として渡し続けるのが前提です。</p>
+  <div class="tools"><div class="tool"><p class="tn">Midjourney</p><p class="tt"><code>--ar 1:1</code> を必ず付ける。キャラの一貫性は <code>--cref [シートのURL] --cw 100</code>、画風の一貫性は <code>--sref</code>。同じ構図を反復したいページは <code>--seed</code> を固定する。</p></div>
+<div class="tool"><p class="tn">ChatGPT / GPT Image</p><p class="tt">会話で直せるのが強み。キャラクターシートを最初にアップロードし、「このキャラで」と指定し続ける。修正指示が自然言語で通る。</p></div>
+<div class="tool"><p class="tn">Google Gemini（Nano Banana 系）</p><p class="tt">参照画像を渡したうえでの編集と一貫性維持が得意。p3→p33 の img2img はここが有利。</p></div>
+<div class="tool"><p class="tn">Adobe Firefly</p><p class="tt">学習データの都合で商用利用の条件が明快。KDPで売る前提なら安全側。</p></div></div>
+</section>
+
+<section>
+  <h2>必ず守ること</h2>
+  <ul class="notes"><li><strong>正方形で出す</strong>判型が 8.5×8.5in なので、1:1 以外で作ると後で切ることになり構図が壊れます。</li>
+<li><strong>文字を絶対に入れさせない</strong>接尾辞の <code>no text, no lettering, no watermark</code> は消さないこと。生成AIは絵本の絵に読めない文字を描き込みます。</li>
+<li><strong>上部に余白を残す</strong>本文の文字はページ上部に置く設計です。そこを絵で埋めると文字が乗りません。</li>
+<li><strong>最終的に 2588 × 2625 px / CMYK</strong>正方形で作った絵を、裁ち落とし込みの非正方形キャンバスに配置します。生成時は大きめに出しておくこと。</li>
+<li><strong>KDPでのAI申告</strong>生成AIを使った場合、入稿時の申告が必須です。あわせて使ったツールの商用利用条件も確認してください。</li></ul>
+</section>
+
+<section>
+  <h2>登場人物（参照用）</h2>
+  <p class="sub">キャラクターシートが崩れたとき、この定義を貼り直してください。</p>
+  <div class="block"><pre id="cast">Koro: a round brown bear cub, big and soft, small round ears
+Chicchi: a tiny grey mouse, round ears, long thin tail
+Mimi: a white rabbit with two long upright ears
+Kon: an orange fox, pointed nose, thick bushy tail
+Kuru: a reddish-brown squirrel with a big fluffy tail
+Pipi: a very small blue bird with a tiny orange beak</pre></div>
+  <div class="toolbar" style="margin-top:12px;"><button data-copy="cast">コピー</button></div>
+
+  <h2 style="margin-top:30px;">共通の画風指定</h2>
+  <p class="sub">下の各プロンプトには連結済みです。単体で使いたいとき用。</p>
+  <div class="block"><pre id="style">children&#x27;s picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark</pre></div>
+  <div class="toolbar" style="margin-top:12px;"><button data-copy="style">コピー</button></div>
+</section>
+
+<section>
+  <h2>各ページ</h2>
+  <p class="sub">★は特に作り込むページです。</p>
+  <div class="toolbar">
+    <button id="copyall">全部まとめてコピー</button>
+    <span class="count" id="count"></span>
+  </div>
+  <div id="list"></div>
+</section>
+
+<footer>
+  出典は <code>tools/make_prompt_pack.py</code>。このページと <code>manuscript/プロンプト集.md</code> は同じ定義から生成しています。<br>
+  生成AIを使った場合、KDPへの申告が必須です。
+</footer>
+</div>
+
+<script>
+const ITEMS = [{"id": "cast", "title": "キャラクターシート", "note": "最初に作る。以降の全ページの参照画像になる。", "prompt": "A character reference sheet on a plain cream background, six small forest animals each drawn three times (front view, side view, back view), evenly spaced in three rows: a round brown bear cub with small round ears; a tiny grey mouse with round ears and a long thin tail; a white rabbit with two long upright ears; an orange fox with a pointed nose and thick bushy tail; a reddish-brown squirrel with a big fluffy tail; a very small blue bird with a tiny orange beak, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p1", "title": "p1 中扉", "note": "タイトルを載せる余白を上部に大きく残す。", "prompt": "A single red apple resting alone on an empty cream background, tiny soft shadow beneath it, large empty space above, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p2", "title": "p2 献辞", "note": "ほぼ余白。", "prompt": "A single apple leaf lying in the lower right corner of an otherwise completely empty cream page, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p3", "title": "p3 もりに、りんごが ひとつ。", "note": "★2番目に作る。この背景を以降で使い回す。p33と同一画角。", "prompt": "A wide calm forest scene, two or three simple trees, one red apple lying on the grass under a tree, a small brown bear cub far away in the distance, gentle morning light, large empty sky at the top, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p4", "title": "p4 くまの コロの りんご。", "note": "まだかじっていない。", "prompt": "A round brown bear cub holding one whole red apple with both paws close to his face, happy closed-eye smile, simple forest background, plain open area on the right, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p5", "title": "p5 「いいなあ」ねずみの チッチ。", "note": "以降 p8/p11/p14/p17 も同じ構図で反復する。", "prompt": "A tiny grey mouse peeking out from tall grass at the bottom corner of the frame, looking up longingly at something outside the frame, big empty space above, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p6", "title": "p6 「はんぶん、こ！」①", "note": "表紙もこの構図を使う。", "prompt": "A brown bear cub breaking a red apple into two halves with both paws, arms spread wide, tiny juice droplets in the air, joyful open mouth, cream background, plain area at the bottom, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p7", "title": "p7 しゃく、しゃく。ふたりに なった。", "note": "2人。りんごは1/2。", "prompt": "A brown bear cub and a tiny grey mouse sitting side by side, each biting into half of a red apple, cheerful, simple grass ground line, empty sky above, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p8", "title": "p8 「いいなあ」うさぎの ミミ。", "note": "p5と同じ構図。動物だけ替える。", "prompt": "A white rabbit with two long upright ears peeking out from tall grass at the bottom corner of the frame, looking up longingly at something outside the frame, big empty space above, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p9", "title": "p9 「はんぶん、こ！」②", "note": "1/2 を 1/4 ×2 に。", "prompt": "A tiny grey mouse splitting a half of a red apple into two quarters with both paws, arms spread wide, tiny juice droplets, joyful, cream background, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p10", "title": "p10 さんにんに なった。", "note": "3人。りんごは1/4。", "prompt": "A brown bear cub, a tiny grey mouse and a white rabbit sitting side by side in a row, each nibbling a quarter piece of red apple, cheerful, simple grass ground line, empty sky above, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p11", "title": "p11 「いいなあ」きつねの コン。", "note": "p5と同じ構図。", "prompt": "An orange fox with a pointed nose and thick bushy tail peeking out from tall grass at the bottom corner of the frame, looking up longingly at something outside the frame, big empty space above, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p12", "title": "p12 「はんぶん、こ！」③", "note": "1/4 を 1/8 ×2 に。", "prompt": "A white rabbit splitting a quarter piece of red apple into two smaller pieces with both paws, arms spread wide, joyful, cream background, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p13", "title": "p13 よにんに なった。", "note": "4人。りんごは1/8。", "prompt": "A brown bear cub, a tiny grey mouse, a white rabbit and an orange fox sitting side by side in a row, each nibbling a small piece of red apple, cheerful, simple grass ground line, empty sky above, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p14", "title": "p14 「いいなあ」りすの クル。", "note": "p5と同じ構図。", "prompt": "A reddish-brown squirrel with a big fluffy tail peeking out from tall grass at the bottom corner of the frame, looking up longingly at something outside the frame, big empty space above, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p15", "title": "p15 「はんぶん、こ！」④", "note": "1/8 を 1/16 ×2 に。", "prompt": "An orange fox splitting a small piece of red apple into two even smaller pieces with both paws, arms spread wide, joyful, cream background, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p16", "title": "p16 ごにんに なった。", "note": "5人。りんごは1/16。", "prompt": "Five small forest animals — a brown bear cub, a grey mouse, a white rabbit, an orange fox and a reddish squirrel — sitting side by side in a row, each nibbling a very small piece of red apple, empty sky above, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p17", "title": "p17 「いいなあ」ことりの ピピ。", "note": "ここまでで最も小さく描く。", "prompt": "A very small blue bird with a tiny orange beak perched on a low twig, looking down longingly, mostly empty cream background, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p18", "title": "p18 もう こんなに ちいさい。", "note": "小ささが主役。", "prompt": "Close-up of a squirrel's two open paws holding one extremely tiny sliver of red apple, the smallness is the subject of the image, softly blurred background, huge empty space above, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p19", "title": "p19 それでも、クルは いいました。", "note": "★ため。静かなページ。", "prompt": "Portrait of a reddish-brown squirrel looking straight ahead with a calm, resolute expression, plain cream background, quiet and still, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p20", "title": "p20 「はんぶん、こ！」⑤", "note": "★本作でいちばん明るい1枚。", "prompt": "A reddish-brown squirrel splitting a minuscule piece of apple with both paws, arms wide open, warm light rays radiating outward, small floating light specks and petals, the most joyful and radiant image in the book, cream background, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p21", "title": "p21 ろくにんに なった。", "note": "6人勢揃い。りんごは1/32。", "prompt": "Six small forest animals — a brown bear cub, a grey mouse, a white rabbit, an orange fox, a reddish squirrel and a tiny blue bird — sitting in a row, each nibbling a very tiny piece of apple, warm and content, empty sky above, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p22", "title": "p22 りんごは、もう ない。", "note": "さみしさではなく、静けさ。", "prompt": "An empty patch of grass and soil with no apple anywhere, only the feet of small animals visible at the edges of the frame, quiet and still, soft light, large empty space, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p23", "title": "p23 ぽとん。たねが ひとつ。", "note": "★いちばん小さい者が種を持つ。", "prompt": "A tiny blue bird looking down, one small dark apple seed falling through the air just below its beak, caught mid-fall before touching the ground, cream background, soft shadow on the soil below, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p24", "title": "p24 みんなで つちを かけた。", "note": "上から見下ろす構図。", "prompt": "Six small forest animals gathered in a circle seen from slightly above, patting soil over a spot in the ground with their paws, working together gently, warm light, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p25", "title": "p25 まった。なにも おきない。", "note": "★意図的に退屈に描く。", "prompt": "A bare patch of brown soil in the center of a wide quiet field, six small animals sitting some distance away simply waiting, nothing happening, mostly empty sky, deliberately uneventful and still, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p26", "title": "p26 つちの なかは、ないしょ。", "note": "★読者だけが見られる断面。", "prompt": "Cross-section view of the ground: above, a rainy night sky with six small animals sleeping curled up together; below, underground, a seed with white roots spreading through dark brown soil, secret and warm, painterly cutaway diagram, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p27", "title": "p27 ぴょこん。", "note": "動物の反応は描かない。", "prompt": "One tiny green sprout with two leaves just emerging from brown soil, morning light, close-up, huge empty space around it, cream background, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p28", "title": "p28 はるが きて、なつが きて、", "note": "1枚の中で左から右へ育つ。", "prompt": "The same young apple tree shown twice across one square frame: on the left in spring with pale pink blossoms, on the right in summer with deep green leaves, the tree grows taller from left to right, one seamless scene, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p29", "title": "p29 あきが きて、ふゆが きて。", "note": "★冬で終わるので少しさびしい。", "prompt": "The same apple tree shown twice across one square frame: on the left in autumn with red-orange leaves, on the right in winter with bare branches and snow, the tree is much larger now, quiet and cold, one seamless scene, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p30", "title": "p30 りんごが、いっぱい。", "note": "★クライマックス。最も密度の高い1枚。", "prompt": "Looking straight up at a huge apple tree from below, branches completely full of red apples, dense green leaves, sunlight breaking through, overwhelming abundance, the richest and most detailed image in the book, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p31", "title": "p31 ひとつが、いっぱいに なった。", "note": "p30と対になる引きの構図。", "prompt": "Wide view of six small forest animals standing under a giant apple tree, arms full of red apples, more apples scattered on the grass around them, joyful, warm afternoon light, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p32", "title": "p32 コロは、りんごを ひとつ もって。", "note": "隅にまだ名前のない小さな動物。", "prompt": "A brown bear cub seen from behind, walking while carrying one single red apple, a small unnamed young animal standing alone at the edge of the frame, soft evening light, gentle and quiet, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "p33", "title": "p33 さあ、「はんぶん、こ！」", "note": "★p3を入力にした img2img で作る。円環の要。", "prompt": "The exact same forest scene and camera angle as the opening image, same trees and same light, but now a brown bear cub stands in the center turning toward the viewer, holding out one red apple directly to the camera, warm inviting smile, large empty sky at the top, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "cover1", "title": "表紙（表1）", "note": "上部にタイトルの余白を大きく。サムネイルで判別できるか要確認。", "prompt": "Book cover illustration: a round brown bear cub facing the viewer, breaking one red apple into two halves with both paws, arms spread wide, big joyful smile, tiny juice droplets, warm cream background with soft forest shapes, large clear empty space at the top for a title, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}, {"id": "cover4", "title": "裏表紙（表4）", "note": "右下にバーコード用の白地を空ける。", "prompt": "Six small forest animals sitting in a row nibbling tiny pieces of apple, placed small in the upper half of a mostly empty cream page, plenty of blank space below, children's picture book illustration, watercolor and colored pencil, visible paper texture, thick hand-drawn outlines, flat simple shading, limited palette (cream #F7F1E3, apple red #D94F45, leaf green #6BA368, warm brown #8B6F52, sky blue #A8CBE0, dark ink #3A3226), dot eyes with no whites, generous negative space, square 1:1 composition, no text, no lettering, no watermark"}];
+
+function flash(btn, label){
+  const old = btn.textContent;
+  btn.textContent = label; btn.classList.add("done");
+  setTimeout(function(){ btn.textContent = old; btn.classList.remove("done"); }, 1400);
+}
+async function copy(text, btn){
+  try{
+    await navigator.clipboard.writeText(text);
+    flash(btn, "コピーしました");
+  }catch(e){
+    const ta = document.createElement("textarea");
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try{ document.execCommand("copy"); flash(btn, "コピーしました"); }
+    catch(e2){ flash(btn, "コピーできません"); }
+    document.body.removeChild(ta);
+  }
+}
+
+document.querySelectorAll("button[data-copy]").forEach(function(b){
+  b.addEventListener("click", function(){
+    copy(document.getElementById(b.dataset.copy).textContent, b);
+  });
+});
+
+const list = document.getElementById("list");
+ITEMS.forEach(function(it){
+  const card = document.createElement("div");
+  card.className = "card" + (it.note.indexOf("★") >= 0 ? " star" : "");
+
+  const hd = document.createElement("div"); hd.className = "hd";
+  const h3 = document.createElement("h3"); h3.textContent = it.title;
+  const btn = document.createElement("button"); btn.textContent = "コピー";
+  btn.addEventListener("click", function(){ copy(it.prompt, btn); });
+  hd.appendChild(h3); hd.appendChild(btn);
+
+  const nt = document.createElement("p"); nt.className = "nt"; nt.textContent = it.note;
+  const body = document.createElement("div"); body.className = "body";
+  const pre = document.createElement("pre"); pre.textContent = it.prompt;
+  body.appendChild(pre);
+
+  card.appendChild(hd); card.appendChild(nt); card.appendChild(body);
+  list.appendChild(card);
+});
+
+document.getElementById("count").textContent = ITEMS.length + " 点";
+document.getElementById("copyall").addEventListener("click", function(){
+  const all = ITEMS.map(function(i){ return "## " + i.title + "\n" + i.prompt; }).join("\n\n");
+  copy(all, this);
+});
+</script>
