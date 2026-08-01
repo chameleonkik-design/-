@@ -42,41 +42,23 @@
      UI の自動フェード（.hud）には含めず、常に出したままにする。 */
   #mini{
     position:fixed;left:0;right:0;bottom:0;z-index:11;pointer-events:none;
-    padding:0 26px 9px;display:flex;flex-direction:column;gap:5px;
+    padding:0 20px 10px;display:flex;flex-direction:column;
     font-variant-numeric:tabular-nums;
     -webkit-mask-image:linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent);
             mask-image:linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent)
   }
   body.noinfo #mini{display:none}
-  #mini canvas{width:100%;height:44px;display:block;opacity:.62}
-  #mini .row{
-    display:flex;align-items:center;gap:11px;
-    font-size:9.5px;letter-spacing:.2em;color:rgba(243,239,232,.52)
-  }
-  #mini .row b{font-weight:400;color:rgba(255,207,138,.8)}
-  #mini .row i{width:1px;height:9px;background:rgba(255,255,255,.16);font-style:normal}
-  #mini .grow{flex:1}
-  #mini .bars{display:flex;align-items:center;gap:9px}
-  #mini .bars span{display:flex;align-items:center;gap:5px}
-  #mini .bars u{
-    display:block;width:34px;height:1.5px;background:rgba(255,255,255,.14);
-    position:relative;text-decoration:none;overflow:hidden
-  }
-  #mini .bars u em{
-    position:absolute;inset:0 auto 0 0;width:0%;background:var(--gold);
-    box-shadow:0 0 8px var(--gold);transition:width .07s linear
-  }
+  #mini canvas{width:100%;height:96px;display:block;opacity:.66}
   @media (max-width:720px){
     #mini{padding:0 14px 8px}
-    #mini canvas{height:34px}
-    #mini .bars span:nth-child(n+2){display:none}
+    #mini canvas{height:68px}
   }
 
   /* シネマモード：UI を完全に隠す */
   body.cinema .hud,body.cinema #mini{opacity:0!important;pointer-events:none}
 
   /* ---------- 下部コントロール ---------- */
-  #bottom{left:0;right:0;bottom:0;padding:18px 26px 86px;
+  #bottom{left:0;right:0;bottom:0;padding:18px 26px 126px;
           background:linear-gradient(0deg,rgba(0,0,0,.72),transparent)}
   #scenes{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
   .chip{
@@ -178,7 +160,7 @@
   @media (max-width:720px){
     #meters{display:none}
     #top{padding:16px}
-    #bottom{padding:14px 16px 66px}
+    #bottom{padding:14px 16px 96px}
     .knob{display:none}
     #trackname{max-width:44vw}
     .chip{padding:7px 11px;font-size:10.5px}
@@ -202,20 +184,18 @@
 </header>
 
 <div id="mini">
-  <canvas id="c-mini" width="2400" height="120"></canvas>
-  <div class="row">
-    <span>KEY <b id="m-key">—</b></span><i></i>
-    <span><b id="m-bpm">—</b> BPM</span><i></i>
-    <span id="m-phase">静けさ</span>
-    <span class="grow"></span>
-    <span class="bars">
-      <span>低音<u><em id="m-bass"></em></u></span>
-      <span>中音<u><em id="m-mid"></em></u></span>
-      <span>高音<u><em id="m-high"></em></u></span>
-      <span>エネルギー<u><em id="m-energy"></em></u></span>
-    </span>
-  </div>
+  <canvas id="c-mini" width="1920" height="240"></canvas>
 </div>
+    <div class="sub">音が自然を動かす、没入型ビジュアライザー</div>
+  </div>
+  <div class="spacer"></div>
+  <div>
+    <div id="trackname">音源が読み込まれていません</div>
+    <div id="phase">静けさ</div>
+  </div>
+</header>
+
+
 
 <footer id="bottom" class="hud">
   <div id="scenes"></div>
@@ -814,6 +794,9 @@ class DemoTrack {
    ---------------------------------------------------------------------- */
 const PITCH_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
+/* ピアノロールに出す音域：C2（MIDI 36）から 4 オクターブ */
+const NOTE_LO = 36, NOTE_N = 48;
+
 /* Krumhansl-Schmuckler のキープロファイル */
 const KEY_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const KEY_MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
@@ -827,6 +810,11 @@ class MusicAnalyzer {
     this.keyRoot = -1;
     this.keyMinor = false;
     this.bpm = 0;
+
+    /* 鍵盤ごとのエネルギー（C2〜B5 の 48 音） */
+    this.notes = new Float32Array(NOTE_N);
+    this._noteRaw = new Float32Array(NOTE_N);
+    this._notePeak = 0.12;
 
     /* テンポ推定：20ms ごとにオンセット強度を貯め、自己相関で周期を探す */
     this._ob = new Float32Array(512);
@@ -865,6 +853,9 @@ class MusicAnalyzer {
       for (let i = 0; i < 12; i++) this.chroma[i] = approach(this.chroma[i], 0, 3, dt);
     }
 
+    /* --- 鍵盤ごとのエネルギー --- */
+    this._updateNotes(freq, binHz, dt);
+
     /* --- テンポ --- */
     this._obAcc += flux;
     this._obT += dt;
@@ -876,6 +867,58 @@ class MusicAnalyzer {
     }
     this._bpmClock += dt;
     if (this._bpmClock > 1) { this._bpmClock = 0; this._estimateTempo(); }
+  }
+
+  /** FFT を鍵盤に畳み込む。
+   *  各音の周辺で最大値を取り、隣接する音より突出している分だけ残すと、
+   *  打楽器の広帯域成分が抑えられて音符らしい形になる。 */
+  _updateNotes(freq, binHz, dt) {
+    const raw = this._noteRaw, n = freq.length;
+    for (let i = 0; i < NOTE_N; i++) {
+      const f = 440 * Math.pow(2, (NOTE_LO + i - 69) / 12);
+      const k0 = Math.max(1, Math.floor(f * 0.9715 / binHz));
+      const k1 = Math.min(n, Math.max(k0 + 1, Math.ceil(f * 1.0293 / binHz)));
+      let mx = 0;
+      for (let k = k0; k < k1; k++) if (freq[k] > mx) mx = freq[k];
+      raw[i] = mx / 255;
+    }
+    /* --- 底上げを除く ---
+       打楽器やノイズは全音域を持ち上げるので、中央値ぶんを差し引く */
+    const tmp = this._sorted || (this._sorted = new Float32Array(NOTE_N));
+    tmp.set(raw);
+    tmp.sort();
+    const median = tmp[NOTE_N >> 1];
+    for (let i = 0; i < NOTE_N; i++) raw[i] = Math.max(0, raw[i] - median * 1.25);
+
+    /* --- 山でないものを落とす ---
+       隣より低い成分は、音そのものではなく裾野とみなす */
+    const pk = this._peaks2 || (this._peaks2 = new Float32Array(NOTE_N));
+    for (let i = 0; i < NOTE_N; i++) {
+      const l = i > 0 ? raw[i - 1] : 0, r = i < NOTE_N - 1 ? raw[i + 1] : 0;
+      pk[i] = (raw[i] >= l && raw[i] >= r) ? raw[i] : raw[i] * 0.18;
+    }
+
+    /* --- 倍音を差し引く ---
+       ひとつの音は 1 オクターブ上（+12）やその上の 5 度（+19）にも山を作る。
+       低い側の山が強いほど、上の山は倍音とみなして弱める */
+    for (let i = NOTE_N - 1; i >= 0; i--) {
+      let sub = 0;
+      if (i >= 12) sub += pk[i - 12] * 0.55;
+      if (i >= 19) sub += pk[i - 19] * 0.35;
+      if (i >= 24) sub += pk[i - 24] * 0.22;
+      pk[i] = Math.max(0, pk[i] - sub);
+    }
+    let peak = 0;
+    for (let i = 0; i < NOTE_N; i++) { raw[i] = pk[i]; if (pk[i] > peak) peak = pk[i]; }
+    this._notePeak = Math.max(peak, this._notePeak * 0.997 + 0.00005);
+    const norm = 1 / Math.max(this._notePeak, 0.05);
+    for (let i = 0; i < NOTE_N; i++) {
+      const v = clamp(Math.pow(raw[i] * norm, 0.75), 0, 1);
+      /* 立ち上がりは速く、消えるのはゆっくり（音符として見えるように） */
+      this.notes[i] = v > this.notes[i]
+        ? approach(this.notes[i], v, 60, dt)
+        : approach(this.notes[i], v, 7, dt);
+    }
   }
 
   _matchKey() {
@@ -2798,11 +2841,11 @@ float curtain(vec3 p){
   float t = uTime*0.05;
   /* カーテン 1 枚 1 枚は薄いシート。横方向にうねらせる */
   float wob = fbm3(vec3(p.x*0.0035, p.z*0.0035, t*2.2), 3);
-  float d = p.z*0.0060 + p.x*0.0016 + wob*1.8;
-  float sheet = exp(-abs(fract(d)-0.5)*7.0);
+  float d = p.z*0.0060 + p.x*0.0016 + p.y*0.0075 + wob*1.8;
+  float sheet = exp(-abs(fract(d)-0.5)*13.0);
   /* 大きなうねりで、カーテンが濃い場所と薄い場所を作る */
   /* 薄い場所でも完全には消さない。空のどこかには必ず架かっているようにする */
-  float mask = 0.40 + 0.60*smoothstep(-0.05, 0.55, fbm3(vec3(p.x*0.0016, t*0.8, p.z*0.0016), 2)+0.55);
+  float mask = 0.10 + 0.90*smoothstep(-0.05, 0.55, fbm3(vec3(p.x*0.0016, t*0.8, p.z*0.0016), 2)+0.55);
   float hgt = smoothstep(12.0, 30.0, p.y) * (1.0 - smoothstep(58.0, 112.0, p.y));
   /* 縦に走る筋 */
   float ray = 0.35 + 0.65*max(0.0, fbm3(vec3(p.x*0.05, p.y*0.0035, t*5.0), 3)+0.35);
@@ -2848,7 +2891,9 @@ vec3 marchAurora(vec3 ro, vec3 rd, float mul){
     if(p.y > 112.0 || trans < 0.02) break;
     float d = curtain(p);
     if(d > 0.001){
-      float dens = d * (0.13 + uLevel*0.26 + uIntensity*0.18);
+      /* 見上げる向きの光線はカーテンの層を 100 単位近く通るので、
+         密度はごく小さくしないと空一面が飽和してしまう */
+      float dens = d * (0.0075 + uLevel*0.015 + uIntensity*0.011);
       vec3 c = auroraColor(p.y) * dens * (0.5 + uMid*0.9);
       acc += c * trans * step;
       trans *= exp(-dens*step*0.5);
@@ -3982,67 +4027,92 @@ window.addEventListener('resize', () => {
 });
 
 /* ----------------------------------------------------------------------
-   常設の情報ストリップ
-   映像を邪魔しないよう、画面下端に薄く出したままにする。
+   常設のピアノロール
+   FFT を鍵盤に畳み込んだ音高エネルギーを、左へ流れる帯として描く。
+   キャンバスを自分自身へ描き写すやり方は履歴が残らない環境があるため、
+   列データをリングバッファに持ち、毎フレーム画像として一気に転送する。
    ---------------------------------------------------------------------- */
-const gMini = (() => { const c = $('c-mini'); return { c, x: c.getContext('2d') }; })();
+const ROLL = (() => {
+  const COLS = 900;             // 横方向の解像度（= 時間軸）
+  const WAVE = 10;              // 上端の波形に使う行数
+  const ROWS = WAVE + NOTE_N;
+  const c = $('c-mini');
+  const x = c.getContext('2d');
+  const src = document.createElement('canvas');
+  src.width = COLS; src.height = ROWS;
+  const sx = src.getContext('2d');
+  return { COLS, WAVE, ROWS, c, x, src, sx, img: sx.createImageData(COLS, ROWS),
+           head: 0, acc: 0, last: performance.now() };
+})();
 
-function drawMini(a) {
-  const { c, x } = gMini, W = c.width, H = c.height;
-  x.clearRect(0, 0, W, H);
-
-  /* スペクトル：下寄せの棒。対数配置で低音側をつぶさない */
-  const sp = a.spectrum;
-  if (sp) {
-    const bars = 128, n = sp.length;
-    const binHz = (audio.ctx ? audio.ctx.sampleRate : 48000) / 4096;
-    const LO = 40, HI = 16000;
-    x.fillStyle = 'rgba(255,207,138,.6)';
-    for (let i = 0; i < bars; i++) {
-      const hz0 = LO * Math.pow(HI / LO, i / bars);
-      const hz1 = LO * Math.pow(HI / LO, (i + 1) / bars);
-      const k0 = Math.min(n - 1, Math.floor(hz0 / binHz));
-      const k1 = Math.min(n, Math.max(k0 + 1, Math.ceil(hz1 / binHz)));
-      let sum = 0, cnt = 0;
-      for (let k = k0; k < k1; k++) { sum += sp[k] || 0; cnt++; }
-      const v = (sum / Math.max(1, cnt)) / 255;
-      const h = Math.pow(v, 0.9) * H * 0.62;
-      if (h < 0.6) continue;
-      x.fillRect(i * (W / bars), H - h, W / bars - 2.5, h);
-    }
-  }
-
-  /* 波形：上寄りに 1 本 */
-  const wv = a.wave;
-  if (wv) {
-    x.strokeStyle = 'rgba(255,244,224,1)';
-    x.lineWidth = 2.8;
-    x.beginPath();
-    const step = Math.max(1, Math.floor(wv.length / W));
-    const cy = H * 0.30;
-    for (let i = 0, px = 0; i < wv.length; i += step, px++) {
-      const y = cy - wv[i] * H * 0.30;
-      i === 0 ? x.moveTo(px, y) : x.lineTo(px, y);
-    }
-    x.stroke();
-  }
+/** ピッチクラスから色を決める（彩度は控えめにして映像に馴染ませる） */
+function noteColor(pc, v, out) {
+  const h = ((pc + 3) % 12) / 12 * 6;         // 0..6 の色相
+  const i = Math.floor(h), f = h - i;
+  const s = 0.40, l = 0.32 + v * 0.50;
+  const cc = (1 - Math.abs(2 * l - 1)) * s;
+  const xx = cc * (1 - Math.abs((h % 2) - 1));
+  const m = l - cc / 2;
+  let r, g, b;
+  if (i === 0) { r = cc; g = xx; b = 0; }
+  else if (i === 1) { r = xx; g = cc; b = 0; }
+  else if (i === 2) { r = 0; g = cc; b = xx; }
+  else if (i === 3) { r = 0; g = xx; b = cc; }
+  else if (i === 4) { r = xx; g = 0; b = cc; }
+  else { r = cc; g = 0; b = xx; }
+  out[0] = (r + m) * 255; out[1] = (g + m) * 255; out[2] = (b + m) * 255;
 }
 
-function updateInfo(a) {
-  const m = a.music;
-  if (m) {
-    $('m-key').textContent = m.key;
-    $('m-bpm').textContent = m.bpm ? Math.round(m.bpm) : '—';
+const _rgb = [0, 0, 0];
+function drawRoll(a) {
+  const R = ROLL, { COLS, ROWS, WAVE } = R;
+  const d = R.img.data;
+
+  /* --- 新しい列を書き込む（1 秒あたり 60 列 = 15 秒ぶんの履歴）。
+         横軸は時間なので、描画の重さに左右されない実時間で進める --- */
+  const now = performance.now();
+  const real = clamp((now - R.last) / 1000, 0, 0.5);
+  R.last = now;
+  R.acc += real * 60;
+  let steps = Math.min(40, Math.floor(R.acc));
+  R.acc -= steps;
+  const notes = a.music && a.music.notes;
+  while (steps-- > 0) {
+    const col = R.head;
+    /* 波形の包絡 */
+    const amp = clamp(a.rms * 3.6, 0, 1);
+    for (let y = 0; y < WAVE; y++) {
+      const t = Math.abs((y + 0.5) / WAVE * 2 - 1);
+      const on = t <= amp ? 1 : 0;
+      const p = (y * COLS + col) * 4;
+      d[p] = 255; d[p + 1] = 236; d[p + 2] = 205;
+      d[p + 3] = on * 150;
+    }
+    /* 音高（下が低音、上が高音） */
+    for (let i = 0; i < NOTE_N; i++) {
+      const v = notes ? notes[i] : 0;
+      const y = ROWS - 1 - i;
+      const p = (y * COLS + col) * 4;
+      if (v < 0.14) { d[p + 3] = 0; continue; }
+      noteColor((NOTE_LO + i) % 12, v, _rgb);
+      d[p] = _rgb[0]; d[p + 1] = _rgb[1]; d[p + 2] = _rgb[2];
+      d[p + 3] = 40 + v * 200;
+    }
+    R.head = (R.head + 1) % COLS;
   }
-  $('m-phase').textContent = a.phaseName;
-  drawMini(a);
+
+  /* --- 表示：リングを 2 枚に分けて、いちばん新しい列が右端に来るよう並べる --- */
+  R.sx.putImageData(R.img, 0, 0);
+  const W = R.c.width, H = R.c.height;
+  const head = R.head, rest = COLS - head;
+  R.x.clearRect(0, 0, W, H);
+  R.x.imageSmoothingEnabled = false;
+  const wRest = W * rest / COLS;
+  R.x.drawImage(R.src, head, 0, rest, ROWS, 0, 0, wRest, H);
+  if (head > 0) R.x.drawImage(R.src, 0, 0, head, ROWS, wRest, 0, W - wRest, H);
 }
 
 /* --- メインループ --- */
-const bar = (id, v) => {
-  const el = $(id);
-  if (el) el.style.width = (clamp(v, 0, 1) * 100).toFixed(1) + '%';
-};
 let uiAcc = 0;
 let silentFor = 0;
 let lastPhase = '';
@@ -4061,6 +4131,7 @@ function loop() {
     if (renderer.director && renderer.director.t > 3) renderer.director.cut(renderer.scenes[renderer.cur], a);
   }
   renderer.frame(a);
+  if (infoOn) drawRoll(a);
 
   /* 自動シーン切替：指定間隔を過ぎたら、次の拍に合わせて移る
      （拍が来なければ 5 秒後に切り替える） */
@@ -4076,11 +4147,6 @@ function loop() {
   uiAcc += a.dt;
   if (uiAcc > 0.05) {
     uiAcc = 0;
-    bar('m-bass', a.bass);
-    bar('m-mid', a.mid);
-    bar('m-high', (a.high + a.air) * 0.6);
-    bar('m-energy', a.intensity);
-    if (infoOn) updateInfo(a);
     const ph = $('phase');
     if (ph.textContent !== a.phaseName) ph.textContent = a.phaseName;
     ph.style.opacity = (0.45 + a.intensity * 0.55).toFixed(2);
